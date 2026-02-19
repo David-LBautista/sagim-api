@@ -1,0 +1,93 @@
+@startuml
+entity "Beneficiario" as Beneficiario {
+  +_id : ObjectId
+  municipioId : ObjectId
+  nombre : string
+  apellidoPaterno : string
+  apellidoMaterno : string
+  curp : string
+  fechaNacimiento : Date
+  telefono : string
+  email : string
+  domicilio : string
+  localidad : string
+  grupoVulnerable : string[]
+  observaciones : string
+  activo : boolean
+  fechaRegistro : Date
+  createdAt : Date
+  updatedAt : Date
+}
+
+entity "Programa" as Programa {
+  +_id : ObjectId
+  municipioId : ObjectId
+  nombre : string
+  descripcion : string
+  activo : boolean
+  presupuestoAnual : number
+  fechaInicio : Date
+  fechaFin : Date
+  createdAt : Date
+  updatedAt : Date
+}
+
+entity "Apoyo" as Apoyo {
+  +_id : ObjectId
+  municipioId : ObjectId
+  beneficiarioId : ObjectId
+  programaId : ObjectId
+  fecha : Date
+  tipo : string
+  monto : number
+  cantidad : number
+  observaciones : string
+  entregadoPor : ObjectId
+  comprobante : string
+  folio : string
+  createdAt : Date
+  updatedAt : Date
+}
+
+entity "Inventario" as Inventario {
+  +_id : ObjectId
+  municipioId : ObjectId
+  programaId : ObjectId
+  tipo : string
+  stockActual : number
+  stockInicial : number
+  unidadMedida : string
+  alertaMinima : number
+  valorUnitario : number
+  createdAt : Date
+  updatedAt : Date
+}
+
+entity "MovimientoInventario" as MovimientoInventario {
+  +_id : ObjectId
+  municipioId : ObjectId
+  programaId : ObjectId
+  inventarioId : ObjectId
+  tipoMovimiento : string
+  tipoRecurso : string
+  cantidad : number
+  stockAnterior : number
+  stockNuevo : number
+  concepto : string
+  responsable : ObjectId
+  fecha : Date
+  apoyoId : ObjectId
+  comprobante : string
+  observaciones : string
+  folio : string
+  createdAt : Date
+  updatedAt : Date
+}
+
+Beneficiario }o--|| Programa : "recibe apoyo de"
+Apoyo }o--|| Beneficiario : "para"
+Apoyo }o--|| Programa : "pertenece a"
+Inventario }o--|| Programa : "de"
+MovimientoInventario }o--|| Inventario : "afecta"
+MovimientoInventario }o--|| Programa : "de"
+@enduml

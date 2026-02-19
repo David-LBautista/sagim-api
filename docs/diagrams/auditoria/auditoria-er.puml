@@ -1,0 +1,30 @@
+@startuml
+entity "AuditLog" as AuditLog {
+  +_id : ObjectId
+  municipioId : ObjectId
+  usuarioId : ObjectId
+  rol : string
+  modulo : string
+  accion : string
+  entidad : string
+  entidadId : string
+  cambios : object
+  ip : string
+  userAgent : string
+  createdAt : Date
+  updatedAt : Date
+}
+
+entity "User" as User {
+  +_id : ObjectId
+  ...
+}
+
+entity "Municipality" as Municipality {
+  +_id : ObjectId
+  ...
+}
+
+AuditLog o--|| User : usuarioId
+AuditLog o--|| Municipality : municipioId
+@enduml

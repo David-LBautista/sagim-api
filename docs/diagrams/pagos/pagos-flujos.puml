@@ -1,0 +1,28 @@
+@startuml
+actor Admin
+participant "PagosController" as Controller
+participant "PagosService" as Service
+database "MongoDB" as DB
+
+== Registrar Pago ==
+Admin -> Controller: POST /pagos (CreatePagoDto)
+Controller -> Service: createPago(createPagoDto, municipioId)
+Service -> DB: Validar payment intent con Stripe
+Service -> DB: Guardar pago
+Service -> Controller: Pago creado
+Controller -> Admin: 201 Pago creado
+
+== Listar Pagos ==
+Admin -> Controller: GET /pagos?predioId&concepto
+Controller -> Service: findPagos(municipioId, filtros)
+Service -> DB: Buscar pagos
+Service -> Controller: Lista de pagos
+Controller -> Admin: 200 Lista de pagos
+
+== Registrar Orden de Pago ==
+Admin -> Controller: POST /ordenes-pago (CreateOrdenPagoDto)
+Controller -> Service: createOrdenPago(createOrdenPagoDto, municipioId)
+Service -> DB: Guardar orden de pago
+Service -> Controller: Orden de pago creada
+Controller -> Admin: 201 Orden de pago creada
+@enduml

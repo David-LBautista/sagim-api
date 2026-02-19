@@ -1,0 +1,27 @@
+@startuml
+actor Presidente
+participant "DashboardController" as Controller
+participant "DashboardService" as Service
+database "MongoDB" as DB
+
+== Resumen Tesorería ==
+Presidente -> Controller: GET /dashboard/tesoreria/resumen
+Controller -> Service: getResumenTesoreria(municipioId)
+Service -> DB: Agregaciones de pagos, órdenes, servicios
+Service -> Controller: Resumen
+Controller -> Presidente: 200 Resumen
+
+== Ingresos por Fecha ==
+Presidente -> Controller: GET /dashboard/tesoreria/ingresos?desde&hasta
+Controller -> Service: getIngresos(municipioId, desde, hasta)
+Service -> DB: Buscar pagos por fecha
+Service -> Controller: Ingresos
+Controller -> Presidente: 200 Ingresos
+
+== Ingresos por Área ==
+Presidente -> Controller: GET /dashboard/tesoreria/ingresos-por-area
+Controller -> Service: getIngresosPorArea(municipioId)
+Service -> DB: Buscar ingresos agrupados
+Service -> Controller: Ingresos por área
+Controller -> Presidente: 200 Ingresos por área
+@enduml

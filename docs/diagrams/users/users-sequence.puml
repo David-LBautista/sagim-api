@@ -1,0 +1,66 @@
+@startuml
+actor Admin
+participant "UsersController" as Controller
+participant "UsersService" as Service
+database "MongoDB" as DB
+
+== Crear Usuario ==
+Admin -> Controller: POST /users (CreateUserDto)
+Controller -> Service: create(createUserDto, user)
+Service -> DB: Buscar email existente
+alt Email ya registrado
+    Service -> Controller: ConflictException
+    Controller -> Admin: 409 El email ya está registrado
+else
+    Service -> DB: Guardar usuario (hash password)
+    Service -> Controller: Usuario creado
+    Controller -> Admin: 201 Usuario creado
+end
+
+== Listar Usuarios ==
+Admin -> Controller: GET /users
+Controller -> Service: findAll(municipioId)
+Service -> DB: Buscar usuarios (por municipioId)
+Service -> Controller: Lista de usuarios
+Controller -> Admin: 200 Lista de usuarios
+
+== Obtener Usuario por ID ==
+Admin -> Controller: GET /users/:id
+Controller -> Service: findOne(id)
+Service -> DB: Buscar usuario por id
+alt No encontrado
+    Service -> Controller: NotFoundException
+    Controller -> Admin: 404 Usuario no encontrado
+else
+    Service -> Controller: Usuario encontrado
+    Controller -> Admin: 200 Usuario encontrado
+end
+
+== Actualizar Usuario ==
+Admin -> Controller: PATCH /users/:id (UpdateUserDto)
+Controller -> Service: update(id, updateUserDto)
+Service -> DB: Buscar usuario por id
+alt No encontrado
+    Service -> Controller: NotFoundException
+    Controller -> Admin: 404 Usuario no encontrado
+else
+    Service -> DB: Validar email único (si cambia)
+    Service -> DB: Hash password (si cambia)
+    Service -> DB: Actualizar usuario
+    Service -> Controller: Usuario actualizado
+    Controller -> Admin: 200 Usuario actualizado
+end
+
+== Eliminar Usuario ==
+Admin -> Controller: DELETE /users/:id
+Controller -> Service: remove(id)
+Service -> DB: Buscar usuario por id
+alt No encontrado
+    Service -> Controller: NotFoundException
+    Controller -> Admin: 404 Usuario no encontrado
+else
+    Service -> DB: Eliminar usuario
+    Service -> Controller: void
+    Controller -> Admin: 204 Usuario eliminado
+end
+@enduml

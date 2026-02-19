@@ -1,0 +1,32 @@
+@startuml
+entity "Municipality" as Municipality {
+  +_id : ObjectId
+  nombre : string
+  estado : string
+  claveInegi : string
+  poblacion : number
+  config : object
+  activo : boolean
+  logoUrl : string
+  contactoEmail : string
+  contactoTelefono : string
+  direccion : string
+  createdAt : Date
+  updatedAt : Date
+}
+
+entity "User" as User {
+  +_id : ObjectId
+  municipioId : ObjectId
+  ... // otros campos
+}
+
+entity "Programa" as Programa {
+  +_id : ObjectId
+  municipioId : ObjectId
+  ... // otros campos
+}
+
+Municipality ||--o{ User : "tiene"
+Municipality ||--o{ Programa : "tiene"
+@enduml

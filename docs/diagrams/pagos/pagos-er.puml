@@ -1,0 +1,46 @@
+@startuml
+entity "Pago" as Pago {
+  +_id : ObjectId
+  municipioId : ObjectId
+  ordenPagoId : ObjectId
+  predioId : ObjectId
+  ciudadanoId : ObjectId
+  concepto : string
+  montoBase : number
+  montoEnLinea : number
+  montoCobrado : number
+  stripeFee : number
+  montoNetoMunicipio : number
+  feePagadoPor : string
+  esquemaPrecio : string
+  monto : number
+  estado : string
+  stripePaymentIntentId : string
+  stripeChargeId : string
+  createdAt : Date
+  updatedAt : Date
+}
+
+entity "OrdenPago" as OrdenPago {
+  +_id : ObjectId
+  token : string
+  municipioId : ObjectId
+  servicioId : ObjectId
+  predioId : ObjectId
+  ciudadanoId : ObjectId
+  monto : number
+  concepto : string
+  estado : string
+  expiresAt : Date
+  usadaAt : Date
+  descripcion : string
+  areaResponsable : string
+  añosPagados : number[]
+  creadaPorId : ObjectId
+  createdAt : Date
+  updatedAt : Date
+}
+
+Pago o--|| OrdenPago : ordenPagoId
+OrdenPago o--|| Pago : "tiene"
+@enduml

@@ -1,0 +1,35 @@
+@startuml
+entity "Reporte" as Reporte {
+  +_id : ObjectId
+  municipioId : ObjectId
+  nombre : string
+  telefono : string
+  tipo : ReportType
+  descripcion : string
+  ubicacion : object
+  colonia : string
+  calle : string
+  evidencia : string[]
+  estado : ReportStatus
+  asignadoA : ObjectId
+  comentario : string
+  fechaAtencion : Date
+  folio : string
+  createdAt : Date
+  updatedAt : Date
+}
+
+entity "Municipality" as Municipality {
+  +_id : ObjectId
+  nombre : string
+  ... // otros campos
+}
+
+entity "User" as User {
+  +_id : ObjectId
+  ... // otros campos
+}
+
+Reporte o--|| Municipality : municipioId
+Reporte o--|| User : asignadoA
+@enduml

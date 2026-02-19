@@ -1,0 +1,25 @@
+import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
+import { Document, Types } from 'mongoose';
+
+export type MunicipioCatalogoDocument = MunicipioCatalogo & Document;
+
+@Schema({ collection: 'catalog_municipios_veracruz', timestamps: true })
+export class MunicipioCatalogo {
+  @Prop({ required: true })
+  nombre: string;
+
+  @Prop({ required: true })
+  poblacion: number;
+
+  @Prop({ type: Types.ObjectId, ref: 'Estado', required: true })
+  estadoId: Types.ObjectId;
+
+  @Prop({ required: true, default: true })
+  activo: boolean;
+
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export const MunicipioCatalogoSchema =
+  SchemaFactory.createForClass(MunicipioCatalogo);

@@ -1,0 +1,28 @@
+@startuml
+actor Presidente
+actor Contralor
+participant "DashboardAuditoriaController" as Controller
+participant "AuditoriaService" as Service
+database "MongoDB" as DB
+
+== Resumen Auditoría ==
+Presidente -> Controller: GET /dashboard/auditoria/resumen
+Controller -> Service: getResumen(municipioId)
+Service -> DB: Agregaciones de logs de auditoría
+Service -> Controller: Resumen
+Controller -> Presidente: 200 Resumen
+
+== Actividad por Módulo ==
+Contralor -> Controller: GET /dashboard/auditoria/actividad-por-modulo?dias
+Controller -> Service: getActividadPorModulo(municipioId, dias)
+Service -> DB: Buscar logs agrupados por módulo
+Service -> Controller: Actividad
+Controller -> Contralor: 200 Actividad
+
+== Acciones Críticas ==
+Contralor -> Controller: GET /dashboard/auditoria/acciones-criticas?dias
+Controller -> Service: getAccionesCriticas(municipioId, dias)
+Service -> DB: Buscar logs de acciones críticas
+Service -> Controller: Acciones críticas
+Controller -> Contralor: 200 Acciones críticas
+@enduml

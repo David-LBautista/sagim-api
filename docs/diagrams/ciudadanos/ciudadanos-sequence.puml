@@ -1,0 +1,43 @@
+@startuml
+actor User
+participant "CiudadanosController" as Controller
+participant "CiudadanosService" as Service
+database "MongoDB" as DB
+
+== Registrar Ciudadano ==
+User -> Controller: POST /ciudadanos (CreateCiudadanoDto)
+Controller -> Service: create(createCiudadanoDto, municipioId)
+Service -> DB: Buscar ciudadano por CURP y municipioId
+alt Ya existe CURP en municipio
+    Service -> Controller: ConflictException
+    Controller -> User: 409 CURP ya existe en el municipio
+else
+    Service -> DB: Crear ciudadano
+    Service -> Controller: Ciudadano creado
+    Controller -> User: 201 Ciudadano creado
+end
+
+== Buscar Ciudadano por CURP ==
+User -> Controller: GET /ciudadanos?curp=CURP
+Controller -> Service: findByCurp(curp, municipioId)
+Service -> DB: Buscar ciudadano por CURP y municipioId
+alt No encontrado
+    Service -> Controller: NotFoundException
+    Controller -> User: 404 Ciudadano no encontrado
+else
+    Service -> Controller: Ciudadano encontrado
+    Controller -> User: 200 Ciudadano encontrado
+end
+
+== Obtener Ciudadano por ID ==
+User -> Controller: GET /ciudadanos/:id
+Controller -> Service: findOne(id, municipioId)
+Service -> DB: Buscar ciudadano por id y municipioId
+alt No encontrado
+    Service -> Controller: NotFoundException
+    Controller -> User: 404 Ciudadano no encontrado
+else
+    Service -> Controller: Ciudadano encontrado
+    Controller -> User: 200 Ciudadano encontrado
+end
+@enduml

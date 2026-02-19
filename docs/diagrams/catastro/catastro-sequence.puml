@@ -1,0 +1,33 @@
+@startuml
+actor Admin
+participant "CatastroController" as Controller
+participant "CatastroService" as Service
+database "MongoDB" as DB
+
+== Registrar Predio ==
+Admin -> Controller: POST /catastro/predios (CreatePredioDto)
+Controller -> Service: createPredio(createPredioDto, municipioId)
+Service -> DB: Buscar predio por claveCatastral
+alt Ya existe
+    Service -> Controller: ConflictException
+    Controller -> Admin: 409 Clave catastral ya existe
+else
+    Service -> DB: Guardar predio
+    Service -> Controller: Predio creado
+    Controller -> Admin: 201 Predio creado
+end
+
+== Listar Predios ==
+Admin -> Controller: GET /catastro/predios?propietarioId
+Controller -> Service: findPredios(municipioId, propietarioId)
+Service -> DB: Buscar predios
+Service -> Controller: Lista de predios
+Controller -> Admin: 200 Lista de predios
+
+== Registrar Cita ==
+Admin -> Controller: POST /catastro/citas (CreateCitaDto)
+Controller -> Service: createCita(createCitaDto, municipioId)
+Service -> DB: Guardar cita
+Service -> Controller: Cita creada
+Controller -> Admin: 201 Cita creada
+@enduml

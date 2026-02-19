@@ -1,0 +1,40 @@
+@startuml
+actor Admin
+participant "DifController" as Controller
+participant "DifService" as Service
+database "MongoDB" as DB
+
+== Registrar Beneficiario ==
+Admin -> Controller: POST /dif/beneficiarios (CreateBeneficiarioDto)
+Controller -> Service: createBeneficiario(createBeneficiarioDto, municipioId)
+Service -> DB: Buscar beneficiario por CURP y municipioId
+alt Ya existe
+    Service -> Controller: ConflictException
+    Controller -> Admin: 409 Beneficiario ya registrado
+else
+    Service -> DB: Guardar beneficiario
+    Service -> Controller: Beneficiario creado
+    Controller -> Admin: 201 Beneficiario creado
+end
+
+== Listar Beneficiarios ==
+Admin -> Controller: GET /dif/beneficiarios?curp&page&limit
+Controller -> Service: findBeneficiarios(municipioId, filtros)
+Service -> DB: Buscar beneficiarios
+Service -> Controller: Lista de beneficiarios
+Controller -> Admin: 200 Lista de beneficiarios
+
+== Registrar Apoyo ==
+Admin -> Controller: POST /dif/apoyos (CreateApoyoDto)
+Controller -> Service: createApoyo(createApoyoDto, municipioId)
+Service -> DB: Guardar apoyo
+Service -> Controller: Apoyo creado
+Controller -> Admin: 201 Apoyo creado
+
+== Registrar Movimiento Inventario ==
+Admin -> Controller: POST /dif/inventario/entrada (CreateEntradaInventarioDto)
+Controller -> Service: createEntradaInventario(createEntradaInventarioDto, municipioId)
+Service -> DB: Guardar movimiento inventario
+Service -> Controller: Movimiento creado
+Controller -> Admin: 201 Movimiento creado
+@enduml

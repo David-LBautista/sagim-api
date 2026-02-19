@@ -1,0 +1,38 @@
+@startuml
+entity "Predio" as Predio {
+  +_id : ObjectId
+  municipioId : ObjectId
+  claveCatastral : string
+  propietarioId : ObjectId
+  ubicacion : string
+  colonia : string
+  calle : string
+  numero : string
+  superficie : number
+  uso : string
+  valorCatastral : number
+  activo : boolean
+  observaciones : string
+  createdAt : Date
+  updatedAt : Date
+}
+
+entity "Cita" as Cita {
+  +_id : ObjectId
+  municipioId : ObjectId
+  predioId : ObjectId
+  ciudadanoId : ObjectId
+  fecha : Date
+  motivo : string
+  estado : string
+  observaciones : string
+  atendidoPor : ObjectId
+  fechaAtencion : Date
+  folio : string
+  createdAt : Date
+  updatedAt : Date
+}
+
+Predio o--|| Cita : "puede tener"
+Cita o--|| Predio : "para"
+@enduml

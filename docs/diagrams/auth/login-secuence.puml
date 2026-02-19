@@ -1,0 +1,64 @@
+@startuml login-sequence
+title Flujo Completo de Autenticación - SAGIM API (Login)
+
+actor Usuario
+participant "Angular (Frontend)" as FE
+participant "NestJS API" as BE
+participant "AuthService" as Auth
+database "MongoDB" as DB
+participant "JWT Service" as JWT
+participant "bcrypt" as Bcrypt
+
+Usuario -> FE : Ingresa email + password
+FE -> BE : POST /api/v1/auth/login
+BE -> Auth : login(email, password)
+
+Auth -> DB : findUserByEmail(email)
+DB --> Auth : user | null
+
+alt Usuario no existe
+  Auth --> BE : Error 401 (Credenciales inválidas)
+  BE --> FE : 401 Unauthorized
+  FE --> Usuario : Credenciales inválidas
+else Usuario existe
+  Auth -> Bcrypt : compare(password, user.passwordHash)
+  Bcrypt --> Auth : match / no match
+
+  alt Password incorrecta
+    Auth --> BE : Error 401 (Credenciales inválidas)
+    BE --> FE : 401 Unauthorized
+    FE --> Usuario : Credenciales inválidas
+  else Password correcta
+    Auth -> Auth : verificar user.activo
+
+    alt Usuario inactivo
+      Auth --> BE : Error 401 (Usuario inactivo)
+      BE --> FE : 401 Unauthorized
+      FE --> Usuario : Usuario inactivo
+    else Usuario activo
+      Auth -> Auth : construir JWT payload\n{sub, email, municipioId, rol}
+
+      Auth -> JWT : generarAccessToken(1h)\n+ generarRefreshToken(7d)
+      JWT --> Auth : accessToken, refreshToken
+
+      Auth -> Bcrypt : hash(refreshToken)
+      Bcrypt --> Auth : refreshTokenHash
+
+      Auth -> DB : guardar refreshTokenHash\n+ ultimoAcceso
+
+      opt Tiene municipioId
+        Auth -> DB : buscar Municipio(municipioId)
+        DB --> Auth : municipio + config.modulos
+      end
+
+      Auth -> Auth : determinar módulos por rol
+      Auth -> Auth : determinar permisos por rol
+
+      Auth --> BE : TokenResponse\n(accessToken, refreshToken, user, modulos, permisos)
+      BE --> FE : 200 OK (TokenResponse)
+      FE --> Usuario : Login exitoso
+    end
+  end
+end
+
+@enduml

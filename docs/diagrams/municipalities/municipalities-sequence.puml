@@ -1,0 +1,52 @@
+@startuml
+actor SuperAdmin
+participant "MunicipalitiesController" as Controller
+participant "MunicipalitiesService" as Service
+database "MongoDB" as DB
+participant "ProgramaModel" as Programa
+
+== Crear Municipio ==
+SuperAdmin -> Controller: POST /municipios (CreateMunicipalityDto)
+Controller -> Service: create(createMunicipalityDto)
+Service -> DB: Buscar municipio por claveInegi
+alt Ya existe claveInegi
+    Service -> Controller: ConflictException
+    Controller -> SuperAdmin: 409 Ya existe municipio con clave INEGI
+else
+    Service -> DB: Buscar municipio por nombre
+    alt Ya existe nombre
+        Service -> Controller: ConflictException
+        Controller -> SuperAdmin: 409 Ya existe municipio con nombre
+    else
+        Service -> DB: Crear municipio
+        Service -> Programa: Crear programas DIF base (insertMany)
+        Service -> Controller: Municipio creado
+        Controller -> SuperAdmin: 201 Municipio creado
+    end
+end
+
+== Obtener Municipio por ID ==
+SuperAdmin -> Controller: GET /municipios/:id
+Controller -> Service: findOne(id)
+Service -> DB: Buscar municipio por id
+alt No encontrado
+    Service -> Controller: NotFoundException
+    Controller -> SuperAdmin: 404 Municipio no encontrado
+else
+    Service -> Controller: Municipio encontrado
+    Controller -> SuperAdmin: 200 Municipio encontrado
+end
+
+== Actualizar Configuración ==
+SuperAdmin -> Controller: PATCH /municipios/:id/config (UpdateMunicipalityConfigDto)
+Controller -> Service: updateConfig(id, updateConfigDto)
+Service -> DB: Buscar municipio por id
+alt No encontrado
+    Service -> Controller: NotFoundException
+    Controller -> SuperAdmin: 404 Municipio no encontrado
+else
+    Service -> DB: Actualizar config
+    Service -> Controller: Municipio actualizado
+    Controller -> SuperAdmin: 200 Configuración actualizada
+end
+@enduml

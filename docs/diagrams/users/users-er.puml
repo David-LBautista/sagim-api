@@ -1,0 +1,36 @@
+@startuml
+entity "User" as User {
+  +_id : ObjectId
+  nombre : string
+  email : string
+  password : string
+  rol : UserRole
+  activo : boolean
+  telefono : string
+  avatar : string
+  refreshToken : string
+  ultimoAcceso : Date
+  createdAt : Date
+  updatedAt : Date
+  --
+  municipioId : ObjectId
+}
+
+entity "Municipality" as Municipality {
+  +_id : ObjectId
+  nombre : string
+  estado : string
+  claveInegi : string
+  poblacion : number
+  config : object
+  activo : boolean
+  logoUrl : string
+  contactoEmail : string
+  contactoTelefono : string
+  direccion : string
+  createdAt : Date
+  updatedAt : Date
+}
+
+User }o--|| Municipality : municipioId
+@enduml

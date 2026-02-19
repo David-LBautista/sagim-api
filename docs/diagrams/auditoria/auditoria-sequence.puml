@@ -1,0 +1,22 @@
+@startuml
+actor Admin
+actor Tesoreria
+actor Dif
+participant "AuditoriaController" as Controller
+participant "AuditoriaService" as Service
+database "MongoDB" as DB
+
+== Crear Log de Auditoría ==
+Admin -> Controller: POST /auditoria/logs (CreateAuditLogDto)
+Controller -> Service: createLog(createDto, userId, userRole, municipioId, ip, userAgent)
+Service -> DB: Guardar log de auditoría
+Service -> Controller: Log creado
+Controller -> Admin: 201 Log creado
+
+== Obtener Bitácora ==
+Admin -> Controller: GET /auditoria/logs?modulo&usuarioId&accion&entidad&desde&hasta
+Controller -> Service: getLogs(municipioId, filtros)
+Service -> DB: Buscar logs con filtros
+Service -> Controller: Lista de logs
+Controller -> Admin: 200 Lista de logs
+@enduml

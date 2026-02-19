@@ -1,0 +1,28 @@
+@startuml
+entity "Pago" as Pago {
+  +_id : ObjectId
+  municipioId : ObjectId
+  monto : number
+  estado : string
+  fechaPago : Date
+  ...
+}
+
+entity "OrdenPago" as OrdenPago {
+  +_id : ObjectId
+  municipioId : ObjectId
+  estado : string
+  ...
+}
+
+entity "ServicioCobro" as ServicioCobro {
+  +_id : ObjectId
+  municipioId : ObjectId
+  activo : boolean
+  ...
+}
+
+Pago o--|| OrdenPago : municipioId
+Pago o--|| ServicioCobro : municipioId
+OrdenPago o--|| ServicioCobro : municipioId
+@enduml

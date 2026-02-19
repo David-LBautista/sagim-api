@@ -1,0 +1,36 @@
+@startuml
+entity "Ciudadano" as Ciudadano {
+  +_id : ObjectId
+  municipioId : ObjectId
+  curp : string
+  nombre : string
+  apellidoPaterno : string
+  apellidoMaterno : string
+  telefono : string
+  email : string
+  direccion : object
+  fechaNacimiento : Date
+  fotoPerfil : string
+  activo : boolean
+  createdAt : Date
+  updatedAt : Date
+}
+
+entity "Municipality" as Municipality {
+  +_id : ObjectId
+  nombre : string
+  estado : string
+  claveInegi : string
+  poblacion : number
+  config : object
+  activo : boolean
+  logoUrl : string
+  contactoEmail : string
+  contactoTelefono : string
+  direccion : string
+  createdAt : Date
+  updatedAt : Date
+}
+
+Municipality ||--o{ Ciudadano : municipioId
+@enduml

@@ -1,0 +1,41 @@
+@startuml
+actor Admin
+participant "ReportesController" as Controller
+participant "ReportesService" as Service
+database "MongoDB" as DB
+participant "CloudinaryService" as Cloudinary
+
+== Crear Reporte ==
+Admin -> Controller: POST /reportes (CreateReporteDto, files)
+Controller -> Service: create(createReporteDto, municipioId, files)
+Service -> Cloudinary: uploadMultipleImages(files)
+Service -> DB: Guardar reporte (con URLs de evidencia)
+Service -> Controller: Reporte creado
+Controller -> Admin: 201 Reporte creado
+
+== Listar Reportes ==
+Admin -> Controller: GET /reportes?tipo&estado&colonia
+Controller -> Service: findAll(municipioId, filtros)
+Service -> DB: Buscar reportes por municipio y filtros
+Service -> Controller: Lista de reportes
+Controller -> Admin: 200 Lista de reportes
+
+== Obtener Reporte por ID ==
+Admin -> Controller: GET /reportes/:id
+Controller -> Service: findOne(id, municipioId)
+Service -> DB: Buscar reporte por id y municipioId
+alt No encontrado
+    Service -> Controller: NotFoundException
+    Controller -> Admin: 404 Reporte no encontrado
+else
+    Service -> Controller: Reporte encontrado
+    Controller -> Admin: 200 Reporte encontrado
+end
+
+== Actualizar Reporte ==
+Admin -> Controller: PATCH /reportes/:id (UpdateReporteDto)
+Controller -> Service: update(id, updateReporteDto, municipioId)
+Service -> DB: Buscar y actualizar reporte
+Service -> Controller: Reporte actualizado
+Controller -> Admin: 200 Reporte actualizado
+@enduml

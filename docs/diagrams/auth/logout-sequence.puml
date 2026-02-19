@@ -1,0 +1,31 @@
+@startuml logout-sequence
+title Flujo de Logout - SAGIM API
+
+actor Cliente
+participant "Angular (Frontend)" as FE
+participant "NestJS API" as BE
+participant "JwtAuthGuard" as Guard
+participant "AuthService" as Auth
+database "MongoDB" as DB
+
+Cliente -> FE : Usuario presiona "Cerrar sesión"
+FE -> BE : POST /api/v1/auth/logout (accessToken)
+
+BE -> Guard : canActivate(request)
+Guard -> Guard : validar JWT (firma + expiración)
+Guard --> BE : userId desde payload
+
+alt Token inválido / expirado
+  BE --> FE : 401 Unauthorized
+  FE --> Cliente : Sesión no válida
+else Token válido
+  BE -> Auth : logout(userId)
+  Auth -> DB : update user.refreshTokenHash = null
+  DB --> Auth : OK
+
+  Auth --> BE : logout OK
+  BE --> FE : 200 OK { message: "Sesión cerrada exitosamente" }
+  FE --> Cliente : Borrar tokens del storage local
+end
+
+@enduml
