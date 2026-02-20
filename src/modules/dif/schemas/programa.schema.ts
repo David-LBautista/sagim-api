@@ -5,8 +5,8 @@ export type ProgramaDocument = Programa & Document;
 
 @Schema({ collection: 'dif_programas', timestamps: true })
 export class Programa {
-  @Prop({ type: Types.ObjectId, ref: 'Municipality', required: true })
-  municipioId: Types.ObjectId;
+  @Prop({ type: Types.ObjectId, ref: 'Municipality', required: false })
+  municipioId?: Types.ObjectId;
 
   @Prop({ required: true })
   nombre: string;

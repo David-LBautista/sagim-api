@@ -7,9 +7,26 @@ import {
   IsOptional,
   IsDateString,
   Min,
+  IsArray,
+  ValidateNested,
+  ArrayMinSize,
 } from 'class-validator';
+import { Type } from 'class-transformer';
 import { SupportType } from '@/shared/enums';
 import { ApiProperty } from '@nestjs/swagger';
+
+class ItemApoyoDto {
+  @ApiProperty({ example: '697bf7fd36f2d5ed398d1ecd' })
+  @IsMongoId()
+  @IsNotEmpty()
+  inventarioId: string;
+
+  @ApiProperty({ example: 1 })
+  @IsNumber()
+  @Min(1)
+  @IsNotEmpty()
+  cantidad: number;
+}
 
 export class CreateApoyoDto {
   @ApiProperty({ example: '697bf7fd36f2d5ed398d1ecd' })
@@ -50,6 +67,22 @@ export class CreateApoyoDto {
   @Min(1)
   @IsOptional()
   cantidad?: number;
+
+  @ApiProperty({
+    type: [ItemApoyoDto],
+    required: false,
+    description: 'Items del inventario a entregar',
+    example: [
+      { inventarioId: '697bf7fd36f2d5ed398d1ecd', cantidad: 2 },
+      { inventarioId: '697bf7fd36f2d5ed398d1ece', cantidad: 1 },
+    ],
+  })
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => ItemApoyoDto)
+  @ArrayMinSize(1)
+  @IsOptional()
+  items?: ItemApoyoDto[];
 
   @ApiProperty({ example: 'Entrega en comunidad', required: false })
   @IsString()

@@ -27,6 +27,28 @@ export class Apoyo {
   @Prop({ type: Number, default: 1 })
   cantidad: number; // Cantidad de recursos entregados (ej: 2 despensas)
 
+  @Prop({
+    type: [
+      {
+        inventarioId: {
+          type: Types.ObjectId,
+          ref: 'Inventario',
+          required: true,
+        },
+        cantidad: { type: Number, required: true },
+        valorUnitario: { type: Number, default: 0 },
+        tipo: { type: String },
+      },
+    ],
+    default: [],
+  })
+  items?: Array<{
+    inventarioId: Types.ObjectId;
+    cantidad: number;
+    valorUnitario: number;
+    tipo: string;
+  }>;
+
   @Prop()
   observaciones?: string;
 

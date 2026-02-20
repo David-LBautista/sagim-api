@@ -3,8 +3,8 @@ import { Document, Types } from 'mongoose';
 import { SupportType } from '@/shared/enums';
 
 export enum TipoMovimiento {
-  ENTRADA = 'ENTRADA',
-  SALIDA = 'SALIDA',
+  IN = 'IN',
+  OUT = 'OUT',
   AJUSTE = 'AJUSTE',
 }
 
@@ -74,18 +74,3 @@ MovimientoInventarioSchema.index({ inventarioId: 1 });
 MovimientoInventarioSchema.index({ tipoMovimiento: 1 });
 MovimientoInventarioSchema.index({ fecha: -1 });
 MovimientoInventarioSchema.index({ folio: 1 }, { unique: true });
-
-// Pre-save hook para generar folio
-// eslint-disable-next-line @typescript-eslint/require-await
-MovimientoInventarioSchema.pre('save', async function (next) {
-  if (!this.folio) {
-    const date = new Date();
-    const year = date.getFullYear();
-    const month = (date.getMonth() + 1).toString().padStart(2, '0');
-    const random = Math.floor(Math.random() * 10000)
-      .toString()
-      .padStart(4, '0');
-    this.folio = `MOV-${year}${month}-${random}`;
-  }
-  next();
-});

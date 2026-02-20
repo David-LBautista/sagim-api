@@ -15,6 +15,7 @@ import {
   CreateProgramaDto,
   CreateApoyoDto,
   CreateEntradaInventarioDto,
+  CreateMovimientoInventarioDto,
 } from './dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '@/common/guards';
@@ -141,6 +142,21 @@ export class DifController {
     return this.difService.findProgramaById(id, scope);
   }
 
+  // ==================== UNIDADES DE MEDIDA ====================
+  @Get('unidades-medida')
+  @Roles(UserRole.SUPER_ADMIN, UserRole.ADMIN_MUNICIPIO, UserRole.OPERATIVO)
+  @ApiOperation({ summary: 'Listar todas las unidades de medida' })
+  findUnidadesMedida() {
+    return this.difService.findUnidadesMedida();
+  }
+
+  @Get('unidades-medida/:clave')
+  @Roles(UserRole.SUPER_ADMIN, UserRole.ADMIN_MUNICIPIO, UserRole.OPERATIVO)
+  @ApiOperation({ summary: 'Obtener una unidad de medida por clave' })
+  findUnidadMedidaByClave(@Param('clave') clave: string) {
+    return this.difService.findUnidadMedidaByClave(clave);
+  }
+
   // ==================== APOYOS ====================
   @Post('apoyos')
   @Roles(UserRole.SUPER_ADMIN, UserRole.ADMIN_MUNICIPIO, UserRole.OPERATIVO)
@@ -187,13 +203,13 @@ export class DifController {
     return this.difService.findApoyoById(id, scope);
   }
 
-  // ==================== INVENTARIO ====================
-  @Post('inventario/entrada')
+  // ==================== INVENTARIO - ITEMS (CATÁLOGO) ====================
+  @Post('inventario/items')
   @Roles(UserRole.SUPER_ADMIN, UserRole.ADMIN_MUNICIPIO, UserRole.OPERATIVO)
   @ApiOperation({
-    summary: 'Registrar entrada de inventario (donaciones, compras, etc.)',
+    summary: 'Crear un nuevo item en el catálogo de inventario',
   })
-  registrarEntrada(
+  createInventarioItem(
     @Body() createEntradaDto: CreateEntradaInventarioDto,
     @MunicipalityId() municipioId: string,
     @CurrentUser() user: any,
@@ -205,32 +221,78 @@ export class DifController {
     );
   }
 
-  @Get('inventario')
+  @Get('inventario/items')
   @Roles(UserRole.SUPER_ADMIN, UserRole.ADMIN_MUNICIPIO, UserRole.OPERATIVO)
-  @ApiOperation({ summary: 'Consultar inventario actual' })
+  @ApiOperation({ summary: 'Listar todos los items del inventario' })
   @ApiQuery({ name: 'programaId', required: false })
-  getInventario(
+  getInventarioItems(
     @TenantScope() scope: any,
     @Query('programaId') programaId?: string,
   ) {
     return this.difService.getInventario(scope, programaId);
   }
 
+  @Get('inventario/items/:id')
+  @Roles(UserRole.SUPER_ADMIN, UserRole.ADMIN_MUNICIPIO, UserRole.OPERATIVO)
+  @ApiOperation({ summary: 'Obtener un item de inventario por ID' })
+  getInventarioItemById(@Param('id') id: string, @TenantScope() scope: any) {
+    return this.difService.findInventarioById(id, scope);
+  }
+
+  @Patch('inventario/items/:id')
+  @Roles(UserRole.SUPER_ADMIN, UserRole.ADMIN_MUNICIPIO, UserRole.OPERATIVO)
+  @ApiOperation({ summary: 'Actualizar un item de inventario' })
+  updateInventarioItem(
+    @Param('id') id: string,
+    @Body() updateDto: any,
+    @TenantScope() scope: any,
+  ) {
+    return this.difService.updateInventarioItem(id, updateDto, scope);
+  }
+
+  // ==================== INVENTARIO - MOVIMIENTOS ====================
+  @Post('inventario/movimientos')
+  @Roles(UserRole.SUPER_ADMIN, UserRole.ADMIN_MUNICIPIO, UserRole.OPERATIVO)
+  @ApiOperation({
+    summary: 'Registrar movimiento de inventario (entrada o salida)',
+  })
+  createMovimiento(
+    @Body() createMovimientoDto: CreateMovimientoInventarioDto,
+    @MunicipalityId() municipioId: string,
+    @CurrentUser() user: any,
+  ) {
+    return this.difService.createMovimiento(
+      createMovimientoDto,
+      municipioId,
+      user.sub,
+    );
+  }
+
   @Get('inventario/movimientos')
   @Roles(UserRole.SUPER_ADMIN, UserRole.ADMIN_MUNICIPIO, UserRole.OPERATIVO)
   @ApiOperation({
-    summary: 'Consultar movimientos de inventario (entradas/salidas)',
+    summary: 'Listar movimientos de inventario (entradas/salidas)',
   })
   @ApiQuery({ name: 'programaId', required: false })
-  @ApiQuery({ name: 'tipoMovimiento', required: false })
+  @ApiQuery({ name: 'type', required: false, enum: ['IN', 'OUT'] })
   getMovimientos(
     @TenantScope() scope: any,
     @Query('programaId') programaId?: string,
-    @Query('tipoMovimiento') tipoMovimiento?: string,
+    @Query('type') type?: string,
   ) {
     return this.difService.getMovimientos(scope, {
       programaId,
-      tipoMovimiento: tipoMovimiento as any,
+      type: type as any,
     });
+  }
+
+  // ==================== INVENTARIO - DASHBOARD ====================
+  @Get('inventario/dashboard')
+  @Roles(UserRole.SUPER_ADMIN, UserRole.ADMIN_MUNICIPIO, UserRole.OPERATIVO)
+  @ApiOperation({
+    summary: 'Dashboard de inventario con métricas clave',
+  })
+  getInventarioDashboard(@TenantScope() scope: any) {
+    return this.difService.getInventarioDashboard(scope);
   }
 }
