@@ -17,10 +17,13 @@ export class CreateMunicipalityDto {
   @IsNotEmpty()
   nombre: string;
 
-  @ApiProperty({ example: 'Veracruz', description: 'Estado' })
+  @ApiProperty({
+    example: '65f1234567890abcdef11111',
+    description: 'ID del estado (ObjectId del catálogo de estados)',
+  })
   @IsString()
   @IsNotEmpty()
-  estado: string;
+  estadoId: string;
 
   @ApiProperty({
     example: '30082',

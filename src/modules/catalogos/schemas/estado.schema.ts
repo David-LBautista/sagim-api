@@ -3,7 +3,7 @@ import { Document } from 'mongoose';
 
 export type EstadoDocument = Estado & Document;
 
-@Schema({ collection: 'catalog_estados', timestamps: true })
+@Schema({ collection: 'catalogos_estados', timestamps: true })
 export class Estado {
   @Prop({ required: true, unique: true })
   clave: string;

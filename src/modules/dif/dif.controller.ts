@@ -142,21 +142,6 @@ export class DifController {
     return this.difService.findProgramaById(id, scope);
   }
 
-  // ==================== UNIDADES DE MEDIDA ====================
-  @Get('unidades-medida')
-  @Roles(UserRole.SUPER_ADMIN, UserRole.ADMIN_MUNICIPIO, UserRole.OPERATIVO)
-  @ApiOperation({ summary: 'Listar todas las unidades de medida' })
-  findUnidadesMedida() {
-    return this.difService.findUnidadesMedida();
-  }
-
-  @Get('unidades-medida/:clave')
-  @Roles(UserRole.SUPER_ADMIN, UserRole.ADMIN_MUNICIPIO, UserRole.OPERATIVO)
-  @ApiOperation({ summary: 'Obtener una unidad de medida por clave' })
-  findUnidadMedidaByClave(@Param('clave') clave: string) {
-    return this.difService.findUnidadMedidaByClave(clave);
-  }
-
   // ==================== APOYOS ====================
   @Post('apoyos')
   @Roles(UserRole.SUPER_ADMIN, UserRole.ADMIN_MUNICIPIO, UserRole.OPERATIVO)

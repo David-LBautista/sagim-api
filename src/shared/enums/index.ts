@@ -23,24 +23,6 @@ export enum ReportStatus {
   RECHAZADO = 'RECHAZADO',
 }
 
-// Vulnerable groups
-export enum VulnerableGroup {
-  ADULTO_MAYOR = 'ADULTO_MAYOR',
-  DISCAPACIDAD = 'DISCAPACIDAD',
-  MADRE_SOLTERA = 'MADRE_SOLTERA',
-  POBREZA_EXTREMA = 'POBREZA_EXTREMA',
-  INDIGENA = 'INDIGENA',
-}
-
-// Support types (DIF)
-export enum SupportType {
-  DESPENSA = 'DESPENSA',
-  ECONOMICO = 'ECONOMICO',
-  MEDICAMENTO = 'MEDICAMENTO',
-  APARATO_FUNCIONAL = 'APARATO_FUNCIONAL',
-  OTRO = 'OTRO',
-}
-
 // Property use types
 export enum PropertyUse {
   HABITACIONAL = 'HABITACIONAL',

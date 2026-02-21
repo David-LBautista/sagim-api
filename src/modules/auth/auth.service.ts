@@ -148,9 +148,11 @@ export class AuthService {
 
     const nombresModulos = modulosActivos.map((m) => m.nombre);
 
-    // SUPER_ADMIN tiene acceso a todos los módulos activos
+    // SUPER_ADMIN solo tiene acceso a USUARIOS y MUNICIPIOS (no módulos municipales)
     if (rol === UserRole.SUPER_ADMIN) {
-      return nombresModulos;
+      return nombresModulos.filter(
+        (nombre) => nombre === 'USUARIOS' || nombre === 'MUNICIPIOS',
+      );
     }
 
     // OPERATIVO: solo puede ver el módulo que tiene asignado

@@ -1,6 +1,5 @@
 import {
   IsArray,
-  IsEnum,
   IsString,
   IsOptional,
   IsEmail,
@@ -8,7 +7,6 @@ import {
   Matches,
 } from 'class-validator';
 import { Transform } from 'class-transformer';
-import { VulnerableGroup } from '@/shared/enums';
 import { ApiProperty } from '@nestjs/swagger';
 
 export class UpdateBeneficiarioDto {
@@ -40,7 +38,14 @@ export class UpdateBeneficiarioDto {
   @IsDateString()
   @IsOptional()
   fechaNacimiento?: string;
-
+  @ApiProperty({ example: 'M', enum: ['M', 'F'], required: false, description: 'M = Masculino, F = Femenino' })
+  @IsString()
+  @IsOptional()
+  @Matches(/^[MF]$/i, {
+    message: 'sexo debe ser M (Masculino) o F (Femenino)',
+  })
+  @Transform(({ value }) => value?.toUpperCase())
+  sexo?: string;
   @ApiProperty({ example: '2281112233', required: false })
   @IsString()
   @IsOptional()
@@ -62,15 +67,14 @@ export class UpdateBeneficiarioDto {
   localidad?: string;
 
   @ApiProperty({
-    enum: VulnerableGroup,
     isArray: true,
-    example: [VulnerableGroup.ADULTO_MAYOR],
+    example: ['ADULTO_MAYOR'],
     required: false,
   })
   @IsArray()
-  @IsEnum(VulnerableGroup, { each: true })
+  @IsString({ each: true })
   @IsOptional()
-  grupoVulnerable?: VulnerableGroup[];
+  grupoVulnerable?: string[];
 
   @ApiProperty({
     example: 'Vive solo, requiere apoyo alimentario',

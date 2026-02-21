@@ -1,6 +1,5 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { Document, Types } from 'mongoose';
-import { VulnerableGroup } from '@/shared/enums';
 
 export type BeneficiarioDocument = Beneficiario & Document;
 
@@ -24,6 +23,9 @@ export class Beneficiario {
   @Prop({ type: Date })
   fechaNacimiento?: Date;
 
+  @Prop({ enum: ['M', 'F'] })
+  sexo?: string; // M = Masculino, F = Femenino
+
   @Prop()
   telefono?: string;
 
@@ -36,8 +38,8 @@ export class Beneficiario {
   @Prop()
   localidad?: string;
 
-  @Prop({ type: [String], enum: VulnerableGroup, required: true })
-  grupoVulnerable: VulnerableGroup[];
+  @Prop({ type: [String], required: true })
+  grupoVulnerable: string[];
 
   @Prop()
   observaciones?: string;

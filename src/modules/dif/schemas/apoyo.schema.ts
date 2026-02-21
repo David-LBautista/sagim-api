@@ -1,6 +1,5 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { Document, Types } from 'mongoose';
-import { SupportType } from '@/shared/enums';
 
 export type ApoyoDocument = Apoyo & Document;
 
@@ -18,8 +17,8 @@ export class Apoyo {
   @Prop({ type: Date, required: true })
   fecha: Date;
 
-  @Prop({ type: String, enum: SupportType, required: true })
-  tipo: SupportType;
+  @Prop({ type: String, required: true })
+  tipo: string;
 
   @Prop({ type: Number, default: 0 })
   monto: number;

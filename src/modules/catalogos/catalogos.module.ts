@@ -8,6 +8,20 @@ import {
   MunicipioCatalogoSchema,
 } from './schemas/municipio-catalogo.schema';
 import { Rol, RolSchema } from './schemas/rol.schema';
+import {
+  UnidadMedida,
+  UnidadMedidaSchema,
+} from './schemas/unidad-medida.schema';
+import {
+  TipoMovimiento,
+  TipoMovimientoSchema,
+} from './schemas/tipo-movimiento.schema';
+import {
+  GrupoVulnerable,
+  GrupoVulnerableSchema,
+} from './schemas/grupo-vulnerable.schema';
+import { TipoApoyo, TipoApoyoSchema } from './schemas/tipo-apoyo.schema';
+import { Localidad, LocalidadSchema } from './schemas/localidad.schema';
 
 @Module({
   imports: [
@@ -15,6 +29,11 @@ import { Rol, RolSchema } from './schemas/rol.schema';
       { name: Estado.name, schema: EstadoSchema },
       { name: MunicipioCatalogo.name, schema: MunicipioCatalogoSchema },
       { name: Rol.name, schema: RolSchema },
+      { name: UnidadMedida.name, schema: UnidadMedidaSchema },
+      { name: TipoMovimiento.name, schema: TipoMovimientoSchema },
+      { name: GrupoVulnerable.name, schema: GrupoVulnerableSchema },
+      { name: TipoApoyo.name, schema: TipoApoyoSchema },
+      { name: Localidad.name, schema: LocalidadSchema },
     ]),
   ],
   controllers: [CatalogosController],

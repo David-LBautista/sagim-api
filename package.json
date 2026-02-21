@@ -18,8 +18,15 @@
     "test:cov": "jest --coverage",
     "test:debug": "node --inspect-brk -r tsconfig-paths/register -r ts-node/register node_modules/.bin/jest --runInBand",
     "test:e2e": "jest --config ./test/jest-e2e.json",
-    "seed": "ts-node -r tsconfig-paths/register src/database/seeds/initial-seed.ts",
-    "seed:catalogos": "ts-node -r tsconfig-paths/register src/database/seeds/catalogos-seed.ts"
+    "seed": "ts-node -r tsconfig-paths/register src/database/seeds/seed-runner.ts",
+    "seed:dev": "ts-node -r tsconfig-paths/register src/database/seeds/seed-runner.ts",
+    "seed:estados": "ts-node -r tsconfig-paths/register src/database/seeds/01-estados.seed.ts",
+    "seed:roles": "ts-node -r tsconfig-paths/register src/database/seeds/02-roles.seed.ts",
+    "seed:modulos": "ts-node -r tsconfig-paths/register src/database/seeds/03-modulos.seed.ts",
+    "seed:catalogos": "ts-node -r tsconfig-paths/register src/database/seeds/04-catalogos-base.seed.ts",
+    "seed:admin": "ts-node -r tsconfig-paths/register src/database/seeds/05-super-admin.seed.ts",
+    "seed:localidades": "ts-node -r tsconfig-paths/register src/database/seeds/06-localidades.seed.ts",
+    "seed:legacy": "ts-node -r tsconfig-paths/register src/database/seeds/initial-seed.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.978.0",

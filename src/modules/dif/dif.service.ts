@@ -22,10 +22,6 @@ import {
 } from './schemas/movimiento-inventario.schema';
 import { Counter, CounterDocument } from './schemas/counter.schema';
 import {
-  UnidadMedida,
-  UnidadMedidaDocument,
-} from './schemas/unidad-medida.schema';
-import {
   CreateBeneficiarioDto,
   UpdateBeneficiarioDto,
   CreateProgramaDto,
@@ -49,8 +45,6 @@ export class DifService {
     private movimientoInventarioModel: Model<MovimientoInventarioDocument>,
     @InjectModel(Counter.name)
     private counterModel: Model<CounterDocument>,
-    @InjectModel(UnidadMedida.name)
-    private unidadMedidaModel: Model<UnidadMedidaDocument>,
   ) {}
 
   // ==================== UTILIDADES ====================
@@ -333,28 +327,6 @@ export class DifService {
     }
 
     return programa;
-  }
-
-  // ==================== UNIDADES DE MEDIDA ====================
-  async findUnidadesMedida(): Promise<UnidadMedida[]> {
-    return this.unidadMedidaModel
-      .find({ activo: true })
-      .sort({ clave: 1 })
-      .exec();
-  }
-
-  async findUnidadMedidaByClave(clave: string): Promise<UnidadMedida> {
-    const unidad = await this.unidadMedidaModel
-      .findOne({ clave: clave.toUpperCase(), activo: true })
-      .exec();
-
-    if (!unidad) {
-      throw new NotFoundException(
-        `Unidad de medida con clave ${clave} no encontrada`,
-      );
-    }
-
-    return unidad;
   }
 
   // ==================== APOYOS ====================

@@ -26,9 +26,15 @@ export class ModulosService {
   }
 
   async findAll(user: any) {
-    // SUPER_ADMIN ve todos los módulos activos
+    // SUPER_ADMIN solo ve USUARIOS y MUNICIPIOS (no módulos municipales)
     if (user.rol === UserRole.SUPER_ADMIN) {
-      return this.moduloModel.find({ activo: true }).sort({ nombre: 1 }).exec();
+      return this.moduloModel
+        .find({
+          activo: true,
+          nombre: { $in: ['USUARIOS', 'MUNICIPIOS'] },
+        })
+        .sort({ nombre: 1 })
+        .exec();
     }
 
     // ADMIN_MUNICIPIO y OPERATIVO ven solo módulos activos y habilitados en su municipio

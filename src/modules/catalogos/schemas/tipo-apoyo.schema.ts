@@ -1,15 +1,18 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { Document } from 'mongoose';
 
-export type RolDocument = Rol & Document;
+export type TipoApoyoDocument = TipoApoyo & Document;
 
-@Schema({ collection: 'catalogos_roles', timestamps: true })
-export class Rol {
+@Schema({ collection: 'catalogos_tipos_apoyo', timestamps: true })
+export class TipoApoyo {
   @Prop({ required: true, unique: true, uppercase: true })
-  nombre: string; // SUPER_ADMIN, ADMIN_MUNICIPIO, OPERATIVO
+  clave: string;
 
   @Prop({ required: true })
-  descripcion: string;
+  nombre: string;
+
+  @Prop()
+  descripcion?: string;
 
   @Prop({ default: true })
   activo: boolean;
@@ -21,7 +24,7 @@ export class Rol {
   updatedAt: Date;
 }
 
-export const RolSchema = SchemaFactory.createForClass(Rol);
+export const TipoApoyoSchema = SchemaFactory.createForClass(TipoApoyo);
 
 // Indexes
-RolSchema.index({ activo: 1 });
+TipoApoyoSchema.index({ activo: 1 });

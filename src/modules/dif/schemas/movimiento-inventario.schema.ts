@@ -1,6 +1,5 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { Document, Types } from 'mongoose';
-import { SupportType } from '@/shared/enums';
 
 export enum TipoMovimiento {
   IN = 'IN',
@@ -24,8 +23,8 @@ export class MovimientoInventario {
   @Prop({ type: String, enum: TipoMovimiento, required: true })
   tipoMovimiento: TipoMovimiento;
 
-  @Prop({ type: String, enum: SupportType, required: true })
-  tipoRecurso: SupportType;
+  @Prop({ type: String, required: true })
+  tipoRecurso: string;
 
   @Prop({ type: Number, required: true })
   cantidad: number;

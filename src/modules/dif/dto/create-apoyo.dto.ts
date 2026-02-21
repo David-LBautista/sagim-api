@@ -1,7 +1,6 @@
 import {
   IsMongoId,
   IsNotEmpty,
-  IsEnum,
   IsNumber,
   IsString,
   IsOptional,
@@ -12,7 +11,6 @@ import {
   ArrayMinSize,
 } from 'class-validator';
 import { Type } from 'class-transformer';
-import { SupportType } from '@/shared/enums';
 import { ApiProperty } from '@nestjs/swagger';
 
 class ItemApoyoDto {
@@ -47,10 +45,13 @@ export class CreateApoyoDto {
   @IsNotEmpty()
   fecha: string;
 
-  @ApiProperty({ enum: SupportType, example: SupportType.DESPENSA })
-  @IsEnum(SupportType)
+  @ApiProperty({
+    example: 'DESPENSA',
+    description: 'Clave del tipo de apoyo del catálogo',
+  })
+  @IsString()
   @IsNotEmpty()
-  tipo: SupportType;
+  tipo: string;
 
   @ApiProperty({ example: 0, required: false })
   @IsNumber()

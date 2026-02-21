@@ -4,13 +4,13 @@ import { MunicipalityConfig } from '@/shared/interfaces';
 
 export type MunicipalityDocument = Municipality & Document;
 
-@Schema({ collection: 'catalog_municipios', timestamps: true })
+@Schema({ collection: 'catalogos_municipios', timestamps: true })
 export class Municipality {
   @Prop({ required: true, unique: true })
   nombre: string;
 
-  @Prop({ required: true })
-  estado: string;
+  @Prop({ type: Types.ObjectId, ref: 'Estado', required: true })
+  estadoId: Types.ObjectId;
 
   @Prop({ unique: true, sparse: true })
   claveInegi?: string;
@@ -45,5 +45,6 @@ export class Municipality {
 
 export const MunicipalitySchema = SchemaFactory.createForClass(Municipality);
 
-// Indexes (nombre y claveInegi ya tienen unique: true, solo agregamos activo)
+// Indexes optimizados para performance
 MunicipalitySchema.index({ activo: 1 });
+MunicipalitySchema.index({ estadoId: 1, nombre: 1 }); // Búsquedas por estado + nombre

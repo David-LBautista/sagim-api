@@ -14,10 +14,6 @@ import {
   MovimientoInventarioSchema,
 } from './schemas/movimiento-inventario.schema';
 import { Counter, CounterSchema } from './schemas/counter.schema';
-import {
-  UnidadMedida,
-  UnidadMedidaSchema,
-} from './schemas/unidad-medida.schema';
 
 @Module({
   imports: [
@@ -28,7 +24,6 @@ import {
       { name: Inventario.name, schema: InventarioSchema },
       { name: MovimientoInventario.name, schema: MovimientoInventarioSchema },
       { name: Counter.name, schema: CounterSchema },
-      { name: UnidadMedida.name, schema: UnidadMedidaSchema },
     ]),
   ],
   controllers: [DifController],

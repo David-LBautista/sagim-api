@@ -73,6 +73,7 @@ export class MunicipalitiesService {
 
     const municipality = await this.municipalityModel.create({
       ...createMunicipalityDto,
+      estadoId: new Types.ObjectId(createMunicipalityDto.estadoId),
       logoUrl,
     });
 
@@ -142,6 +143,7 @@ export class MunicipalitiesService {
   async findAll(): Promise<MunicipalityDocument[]> {
     const municipalities = await this.municipalityModel
       .find()
+      .populate('estadoId', 'nombre clave')
       .select('-__v')
       .sort({ nombre: 1 })
       .lean();
@@ -150,7 +152,10 @@ export class MunicipalitiesService {
   }
 
   async findOne(id: string): Promise<MunicipalityDocument> {
-    const municipality = await this.municipalityModel.findById(id).lean();
+    const municipality = await this.municipalityModel
+      .findById(id)
+      .populate('estadoId', 'nombre clave')
+      .lean();
 
     if (!municipality) {
       throw new NotFoundException('Municipio no encontrado');

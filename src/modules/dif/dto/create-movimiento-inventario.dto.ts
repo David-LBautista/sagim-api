@@ -8,7 +8,6 @@ import {
   IsDateString,
   Min,
 } from 'class-validator';
-import { SupportType } from '@/shared/enums';
 import { ApiProperty } from '@nestjs/swagger';
 
 export enum TipoMovimientoInventario {
@@ -30,10 +29,13 @@ export class CreateMovimientoInventarioDto {
   @IsNotEmpty()
   programaId: string;
 
-  @ApiProperty({ enum: SupportType, example: SupportType.DESPENSA })
-  @IsEnum(SupportType)
+  @ApiProperty({
+    example: 'DESPENSA',
+    description: 'Clave del tipo de apoyo del catálogo',
+  })
+  @IsString()
   @IsNotEmpty()
-  tipo: SupportType;
+  tipo: string;
 
   @ApiProperty({ example: 1500, description: 'Cantidad del movimiento' })
   @IsNumber()

@@ -1,15 +1,18 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { Document } from 'mongoose';
 
-export type UnidadMedidaDocument = UnidadMedida & Document;
+export type GrupoVulnerableDocument = GrupoVulnerable & Document;
 
-@Schema({ collection: 'dif_unidades_medida', timestamps: true })
-export class UnidadMedida {
+@Schema({ collection: 'catalogos_grupos_vulnerables', timestamps: true })
+export class GrupoVulnerable {
   @Prop({ required: true, unique: true, uppercase: true })
   clave: string;
 
   @Prop({ required: true })
   nombre: string;
+
+  @Prop()
+  descripcion?: string;
 
   @Prop({ default: true })
   activo: boolean;
@@ -21,8 +24,8 @@ export class UnidadMedida {
   updatedAt: Date;
 }
 
-export const UnidadMedidaSchema = SchemaFactory.createForClass(UnidadMedida);
+export const GrupoVulnerableSchema =
+  SchemaFactory.createForClass(GrupoVulnerable);
 
 // Indexes
-UnidadMedidaSchema.index({ clave: 1 });
-UnidadMedidaSchema.index({ activo: 1 });
+GrupoVulnerableSchema.index({ activo: 1 });
