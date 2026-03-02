@@ -112,6 +112,10 @@ PagoSchema.index({ stripePaymentIntentId: 1 });
 PagoSchema.index({ folio: 1 }, { unique: true });
 PagoSchema.index({ fechaPago: -1 });
 
+// Compound indexes (ESR: Equality → Sort → Range)
+// Dashboard tesorería: resumen, ingresos, comparativo mensual, ingresos por área
+PagoSchema.index({ municipioId: 1, estado: 1, fechaPago: -1 });
+
 // Pre-save hook to generate folio
 PagoSchema.pre('save', async function (next) {
   if (!this.folio) {

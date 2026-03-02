@@ -57,20 +57,84 @@ export class DifController {
   @Get('beneficiarios')
   @Roles(UserRole.SUPER_ADMIN, UserRole.ADMIN_MUNICIPIO, UserRole.OPERATIVO)
   @ApiOperation({
-    summary: 'Listar beneficiarios con filtro por CURP y paginación',
+    summary: 'Listar beneficiarios con filtros avanzados y paginación',
   })
-  @ApiQuery({ name: 'curp', required: false })
+  @ApiQuery({
+    name: 'search',
+    required: false,
+    description: 'Buscar por nombre, CURP o folio',
+  })
+  @ApiQuery({
+    name: 'curp',
+    required: false,
+    description: 'Búsqueda parcial por CURP (legacy)',
+  })
+  @ApiQuery({ name: 'sexo', required: false, enum: ['M', 'F'] })
+  @ApiQuery({
+    name: 'activo',
+    required: false,
+    enum: ['true', 'false'],
+    description: 'Estatus del beneficiario (default: true)',
+  })
+  @ApiQuery({
+    name: 'fechaInicio',
+    required: false,
+    description: 'Fecha registro desde (ISO 8601)',
+  })
+  @ApiQuery({
+    name: 'fechaFin',
+    required: false,
+    description: 'Fecha registro hasta (ISO 8601)',
+  })
+  @ApiQuery({
+    name: 'edadMin',
+    required: false,
+    description: 'Edad mínima (años)',
+  })
+  @ApiQuery({
+    name: 'edadMax',
+    required: false,
+    description: 'Edad máxima (años)',
+  })
+  @ApiQuery({
+    name: 'programaId',
+    required: false,
+    description: 'ID del programa DIF',
+  })
   @ApiQuery({ name: 'page', required: false, example: 1 })
   @ApiQuery({ name: 'limit', required: false, example: 20 })
   findBeneficiarios(
     @TenantScope() scope: any,
+    @Query('search') search?: string,
     @Query('curp') curp?: string,
+    @Query('sexo') sexo?: string,
+    @Query('activo') activo?: string,
+    @Query('fechaInicio') fechaInicio?: string,
+    @Query('fechaFin') fechaFin?: string,
+    @Query('edadMin') edadMin?: string,
+    @Query('edadMax') edadMax?: string,
+    @Query('programaId') programaId?: string,
     @Query('page') page?: string,
     @Query('limit') limit?: string,
   ) {
     const pageNum = page ? parseInt(page, 10) : 1;
     const limitNum = limit ? parseInt(limit, 10) : 20;
-    return this.difService.findBeneficiarios(scope, curp, pageNum, limitNum);
+    return this.difService.findBeneficiarios(
+      scope,
+      {
+        search,
+        curp,
+        sexo,
+        activo: activo === undefined ? undefined : activo === 'true',
+        fechaInicio,
+        fechaFin,
+        edadMin: edadMin ? parseInt(edadMin, 10) : undefined,
+        edadMax: edadMax ? parseInt(edadMax, 10) : undefined,
+        programaId,
+      },
+      pageNum,
+      limitNum,
+    );
   }
 
   @Get('beneficiarios/curp/:curp')
@@ -129,14 +193,12 @@ export class DifController {
   }
 
   @Get('programas')
-  @Roles(UserRole.SUPER_ADMIN, UserRole.ADMIN_MUNICIPIO, UserRole.OPERATIVO)
   @ApiOperation({ summary: 'Listar todos los programas sociales' })
   findProgramas(@TenantScope() scope: any) {
     return this.difService.findProgramas(scope);
   }
 
   @Get('programas/:id')
-  @Roles(UserRole.SUPER_ADMIN, UserRole.ADMIN_MUNICIPIO, UserRole.OPERATIVO)
   @ApiOperation({ summary: 'Obtener un programa por ID' })
   findProgramaById(@Param('id') id: string, @TenantScope() scope: any) {
     return this.difService.findProgramaById(id, scope);
@@ -179,6 +241,13 @@ export class DifController {
     @Query('to') to?: string,
   ) {
     return this.difService.findApoyos(scope, curp, programaId, from, to);
+  }
+
+  @Get('apoyos/dashboard')
+  @Roles(UserRole.SUPER_ADMIN, UserRole.ADMIN_MUNICIPIO, UserRole.OPERATIVO)
+  @ApiOperation({ summary: 'Dashboard de apoyos con métricas clave' })
+  getApoyosDashboard(@TenantScope() scope: any) {
+    return this.difService.getApoyosDashboard(scope);
   }
 
   @Get('apoyos/:id')

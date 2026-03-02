@@ -26,6 +26,7 @@ import { NotificacionesModule } from './modules/notificaciones/notificaciones.mo
 import { AuditoriaModule } from './modules/auditoria/auditoria.module';
 import { ModulosModule } from './modules/modulos/modulos.module';
 import { CatalogosModule } from './modules/catalogos/catalogos.module';
+import { DifReportesModule } from './modules/dif/reportes/dif-reportes.module';
 
 @Module({
   imports: [
@@ -46,6 +47,10 @@ import { CatalogosModule } from './modules/catalogos/catalogos.module';
         uri: configService.get<string>('MONGODB_URI'),
         retryAttempts: 3,
         retryDelay: 1000,
+        autoIndex: configService.get<string>('NODE_ENV') !== 'production',
+        maxPoolSize: 10,
+        serverSelectionTimeoutMS: 5000,
+        socketTimeoutMS: 45000,
       }),
       inject: [ConfigService],
     }),
@@ -67,6 +72,7 @@ import { CatalogosModule } from './modules/catalogos/catalogos.module';
     AuditoriaModule,
     ModulosModule,
     CatalogosModule,
+    DifReportesModule,
   ],
   controllers: [AppController],
   providers: [

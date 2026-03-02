@@ -5,17 +5,37 @@ export type ServicioCobroDocument = ServicioCobro & Document;
 
 @Schema({ collection: 'tesoreria_servicios_cobro', timestamps: true })
 export class ServicioCobro {
-  @Prop({ type: Types.ObjectId, ref: 'Municipality', required: true })
-  municipioId: Types.ObjectId;
+  /** null = catálogo global (plantilla); ObjectId = servicio propio del municipio */
+  @Prop({ type: Types.ObjectId, ref: 'Municipality', default: null })
+  municipioId: Types.ObjectId | null;
+
+  /** Clave única por municipio — ej. "ACTA_NACIMIENTO" */
+  @Prop({ required: true })
+  clave: string;
 
   @Prop({ required: true })
-  nombre: string; // "Acta de Nacimiento Certificada"
+  nombre: string;
 
   @Prop()
-  descripcion?: string; // "Emisión de acta certificada"
+  descripcion?: string;
 
   @Prop({ required: true })
-  costo: number; // Precio en pesos
+  categoria: string; // "Registro Civil", "Predial", etc.
+
+  @Prop({ required: true, default: 0 })
+  costo: number; // monto base en pesos
+
+  /** true = el cajero puede modificar el monto al cobrar */
+  @Prop({ default: false })
+  montoVariable: boolean;
+
+  /** true = debe asociarse a un ciudadano/contribuyente */
+  @Prop({ default: false })
+  requiereContribuyente: boolean;
+
+  /** Posición de orden en la UI del cajero */
+  @Prop({ default: 0 })
+  orden: number;
 
   @Prop({ default: true })
   activo: boolean;
@@ -24,5 +44,7 @@ export class ServicioCobro {
 export const ServicioCobroSchema = SchemaFactory.createForClass(ServicioCobro);
 
 // Índices
+ServicioCobroSchema.index({ municipioId: 1, clave: 1 }, { unique: true });
 ServicioCobroSchema.index({ municipioId: 1, activo: 1 });
+ServicioCobroSchema.index({ categoria: 1 });
 ServicioCobroSchema.index({ nombre: 1 });

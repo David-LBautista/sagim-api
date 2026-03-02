@@ -5,9 +5,11 @@ import {
   IsString,
   IsOptional,
   IsDateString,
+  IsEnum,
   Min,
 } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
+import { TipoInventario } from '../schemas/inventario.schema';
 
 export class CreateEntradaInventarioDto {
   @ApiProperty({ example: '697bf7fd36f2d5ed398d1ecd' })
@@ -23,7 +25,22 @@ export class CreateEntradaInventarioDto {
   @IsNotEmpty()
   tipo: string;
 
-  @ApiProperty({ example: 1500, description: 'Cantidad que ingresa' })
+  @ApiProperty({
+    enum: TipoInventario,
+    default: TipoInventario.FISICO,
+    description:
+      'FISICO = artículos/unidades contables. MONETARIO = fondo en pesos (cantidad = presupuesto total)',
+    required: false,
+  })
+  @IsEnum(TipoInventario)
+  @IsOptional()
+  tipoInventario?: TipoInventario;
+
+  @ApiProperty({
+    example: 1500,
+    description:
+      'Cantidad que ingresa (unidades si FISICO, pesos si MONETARIO)',
+  })
   @IsNumber()
   @Min(1)
   @IsNotEmpty()

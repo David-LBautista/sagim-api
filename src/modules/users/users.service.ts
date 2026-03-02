@@ -198,6 +198,8 @@ export class UsersService {
     const updatedUser = await this.userModel
       .findByIdAndUpdate(id, updateData, { new: true })
       .select('-password -refreshToken')
+      .populate('municipioId', 'nombre')
+      .populate('moduloId', 'nombre descripcion')
       .lean();
 
     this.logger.log(

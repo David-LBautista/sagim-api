@@ -14,7 +14,11 @@ import {
 } from './schemas/beneficiario.schema';
 import { Programa, ProgramaDocument } from './schemas/programa.schema';
 import { Apoyo, ApoyoDocument } from './schemas/apoyo.schema';
-import { Inventario, InventarioDocument } from './schemas/inventario.schema';
+import {
+  Inventario,
+  InventarioDocument,
+  TipoInventario,
+} from './schemas/inventario.schema';
 import {
   MovimientoInventario,
   MovimientoInventarioDocument,
@@ -53,11 +57,15 @@ export class DifService {
    * Usa contador atómico para evitar colisiones bajo concurrencia
    * Compatible con transacciones MongoDB
    */
-  private async generateFolioMovimiento(session?: any): Promise<string> {
+  private async generateFolioMovimiento(
+    municipioId: string,
+    session?: any,
+  ): Promise<string> {
     const date = new Date();
     const year = date.getFullYear();
     const month = (date.getMonth() + 1).toString().padStart(2, '0');
-    const counterId = `mov-${year}${month}`;
+    const munShort = municipioId.toString().slice(-4).toUpperCase();
+    const counterId = `mov-${munShort}-${year}${month}`;
 
     // Incremento atómico del contador
     const counter = await this.counterModel.findOneAndUpdate(
@@ -73,6 +81,52 @@ export class DifService {
     // Generar folio con secuencia de 4 dígitos
     const secuencial = counter.seq.toString().padStart(4, '0');
     return `MOV-${year}${month}-${secuencial}`;
+  }
+
+  private async generateFolioApoyo(
+    municipioId: string,
+    session?: any,
+  ): Promise<string> {
+    const date = new Date();
+    const year = date.getFullYear();
+    const month = (date.getMonth() + 1).toString().padStart(2, '0');
+    const munShort = municipioId.toString().slice(-4).toUpperCase();
+    const counterId = `apo-${munShort}-${year}${month}`;
+
+    const counter = await this.counterModel.findOneAndUpdate(
+      { _id: counterId },
+      { $inc: { seq: 1 } },
+      {
+        upsert: true,
+        new: true,
+        session: session || undefined,
+      },
+    );
+
+    const secuencial = counter.seq.toString().padStart(4, '0');
+    return `APO-${year}${month}-${secuencial}`;
+  }
+
+  /**
+   * Generar folio secuencial para beneficiarios por municipio
+   * Counter scoped por municipio, pero el folio visible NO expone el municipioId
+   */
+  private async generateFolioBeneficiario(
+    municipioId: string,
+  ): Promise<string> {
+    const year = new Date().getFullYear();
+    const month = (new Date().getMonth() + 1).toString().padStart(2, '0');
+    const munShort = municipioId.toString().slice(-4).toUpperCase();
+    const counterId = `ben-${munShort}-${year}${month}`;
+
+    const counter = await this.counterModel.findOneAndUpdate(
+      { _id: counterId },
+      { $inc: { seq: 1 } },
+      { upsert: true, new: true },
+    );
+
+    const secuencial = counter.seq.toString().padStart(4, '0');
+    return `BEN-${year}${month}-${secuencial}`;
   }
 
   // ==================== BENEFICIARIOS ====================
@@ -98,12 +152,25 @@ export class DifService {
       fechaRegistro: new Date(),
     });
 
+    // Generar folio consecutivo atómico por municipio
+    beneficiario.folio = await this.generateFolioBeneficiario(municipioId);
+
     return beneficiario.save();
   }
 
   async findBeneficiarios(
     scope: any,
-    curp?: string,
+    filters: {
+      search?: string; // nombre, apellidos, CURP o folio
+      curp?: string; // búsqueda exacta/parcial por CURP (legacy)
+      sexo?: string; // 'M' | 'F'
+      activo?: boolean; // true | false | undefined = solo activos
+      fechaInicio?: string; // ISO fecha registro desde
+      fechaFin?: string; // ISO fecha registro hasta
+      edadMin?: number; // edad mínima (años cumplidos)
+      edadMax?: number; // edad máxima (años cumplidos)
+      programaId?: string; // ObjectId de programa DIF
+    } = {},
     page: number = 1,
     limit: number = 20,
   ): Promise<{
@@ -113,13 +180,78 @@ export class DifService {
     limit: number;
     totalPages: number;
   }> {
-    const query: any = {
-      ...scope,
-      activo: true,
-    };
+    const query: any = { ...scope };
 
-    if (curp) {
-      query.curp = { $regex: curp.toUpperCase(), $options: 'i' };
+    // Estatus: por defecto solo activos
+    if (filters.activo === undefined || filters.activo === true) {
+      query.activo = true;
+    } else if (filters.activo === false) {
+      query.activo = false;
+    }
+
+    // Búsqueda global: nombre completo, CURP o folio
+    if (filters.search) {
+      const regex = { $regex: filters.search, $options: 'i' };
+      query.$or = [
+        { nombre: regex },
+        { apellidoPaterno: regex },
+        { apellidoMaterno: regex },
+        { curp: { $regex: filters.search.toUpperCase(), $options: 'i' } },
+        { folio: { $regex: filters.search.toUpperCase(), $options: 'i' } },
+      ];
+    }
+
+    // Legacy: búsqueda por CURP (si no viene search)
+    if (filters.curp && !filters.search) {
+      query.curp = { $regex: filters.curp.toUpperCase(), $options: 'i' };
+    }
+
+    // Sexo
+    if (filters.sexo) {
+      query.sexo = filters.sexo.toUpperCase();
+    }
+
+    // Rango de fecha de registro
+    if (filters.fechaInicio || filters.fechaFin) {
+      query.fechaRegistro = {};
+      if (filters.fechaInicio)
+        query.fechaRegistro.$gte = new Date(filters.fechaInicio);
+      if (filters.fechaFin) {
+        const fin = new Date(filters.fechaFin);
+        fin.setHours(23, 59, 59, 999);
+        query.fechaRegistro.$lte = fin;
+      }
+    }
+
+    // Rango de edad (calculado desde fechaNacimiento)
+    if (filters.edadMin !== undefined || filters.edadMax !== undefined) {
+      const hoy = new Date();
+      query.fechaNacimiento = {};
+      if (filters.edadMax !== undefined) {
+        // edad >= edadMax  →  nació antes de (hoy - edadMax años)
+        const desde = new Date(hoy);
+        desde.setFullYear(hoy.getFullYear() - filters.edadMax - 1);
+        query.fechaNacimiento.$gte = desde;
+      }
+      if (filters.edadMin !== undefined) {
+        // edad <= edadMin  →  nació después de (hoy - edadMin años)
+        const hasta = new Date(hoy);
+        hasta.setFullYear(hoy.getFullYear() - filters.edadMin);
+        query.fechaNacimiento.$lte = hasta;
+      }
+    }
+
+    // Filtro por programa: buscar beneficiarioIds en apoyos
+    if (filters.programaId) {
+      const apoyos = await this.apoyoModel
+        .find({ programaId: new Types.ObjectId(filters.programaId) })
+        .select('beneficiarioId')
+        .lean()
+        .exec();
+      const ids = [
+        ...new Set(apoyos.map((a: any) => a.beneficiarioId.toString())),
+      ];
+      query._id = { $in: ids.map((id) => new Types.ObjectId(id)) };
     }
 
     const total = await this.beneficiarioModel.countDocuments(query).exec();
@@ -128,9 +260,11 @@ export class DifService {
 
     const data = await this.beneficiarioModel
       .find(query)
+      .populate('municipioId', 'nombre')
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(limit)
+      .lean()
       .exec();
 
     return {
@@ -154,6 +288,7 @@ export class DifService {
         ...scope,
         activo: true,
       })
+      .populate('municipioId', 'nombre')
       .lean()
       .exec();
 
@@ -224,6 +359,7 @@ export class DifService {
         _id: new Types.ObjectId(id),
         ...scope,
       })
+      .populate('municipioId', 'nombre')
       .exec();
 
     if (!beneficiario) {
@@ -298,12 +434,17 @@ export class DifService {
   async findProgramas(scope: any): Promise<Programa[]> {
     const filter: any = { activo: true };
 
-    // Si viene municipioId en scope, traer programas globales Y del municipio
+    // Programas globales: municipioId null o inexistente
+    const globalFilter = {
+      $or: [{ municipioId: { $exists: false } }, { municipioId: null }],
+    };
+
     if (scope?.municipioId) {
-      filter.$or = [
-        { municipioId: { $exists: false } }, // Programas globales
-        { municipioId: scope.municipioId }, // Programas del municipio
-      ];
+      // Traer programas globales Y los del municipio
+      filter.$or = [...globalFilter.$or, { municipioId: scope.municipioId }];
+    } else {
+      // SUPER_ADMIN sin municipio: solo globales
+      filter.$or = globalFilter.$or;
     }
 
     return this.programaModel.find(filter).sort({ nombre: 1 }).exec();
@@ -315,9 +456,12 @@ export class DifService {
     // Si viene municipioId en scope, permitir programas globales Y del municipio
     if (scope?.municipioId) {
       filter.$or = [
-        { municipioId: { $exists: false } }, // Programas globales
-        { municipioId: scope.municipioId }, // Programas del municipio
+        { municipioId: { $exists: false } }, // No existe el campo
+        { municipioId: null }, // Campo existe pero es null
+        { municipioId: scope.municipioId }, // Programa del municipio
       ];
+    } else {
+      filter.$or = [{ municipioId: { $exists: false } }, { municipioId: null }];
     }
 
     const programa = await this.programaModel.findOne(filter).exec();
@@ -407,17 +551,21 @@ export class DifService {
           );
         }
 
-        // Solo validamos existencia, el stock se valida atómicamente después
+        // Para MONETARIO: cantidad = monto en pesos a descontar; Para FISICO: cantidad = unidades
+        const cantidadDescontar = item.cantidad;
+
         itemsValidados.push({
           inventarioId: inventario._id,
           tipo: inventario.tipo,
+          tipoInventario: inventario.tipoInventario,
           valorUnitario: inventario.valorUnitario || 0,
           stockActual: inventario.stockActual, // Para stockAnterior del movimiento
-          cantidad: item.cantidad,
+          cantidad: cantidadDescontar,
         });
       }
 
       // 2️⃣ CREAR EL APOYO
+      const folioApoyo = await this.generateFolioApoyo(municipioId, session);
       const apoyo = new this.apoyoModel({
         municipioId: municipioOId,
         beneficiarioId: new Types.ObjectId(createApoyoDto.beneficiarioId),
@@ -434,6 +582,7 @@ export class DifService {
         observaciones: createApoyoDto.observaciones,
         entregadoPor: new Types.ObjectId(userId),
         fecha: startOfDay(parseISO(createApoyoDto.fecha)),
+        folio: folioApoyo,
       });
 
       await apoyo.save({ session });
@@ -463,7 +612,7 @@ export class DifService {
         const stockNuevo = iv.stockActual - iv.cantidad;
 
         // Generar folio secuencial dentro de la transacción
-        const folio = await this.generateFolioMovimiento(session);
+        const folio = await this.generateFolioMovimiento(municipioId, session);
 
         // Registrar movimiento OUT
         const movimiento = new this.movimientoInventarioModel({
@@ -541,6 +690,12 @@ export class DifService {
 
     const stockAnterior = inventario.stockActual;
 
+    // Para inventario MONETARIO, descontar el monto en pesos; para FISICO, la cantidad en unidades
+    const esMonetario = inventario.tipoInventario === TipoInventario.MONETARIO;
+    const cantidadDescontar = esMonetario
+      ? createApoyoDto.monto || cantidad
+      : cantidad;
+
     const apoyo = new this.apoyoModel({
       ...createApoyoDto,
       cantidad,
@@ -549,7 +704,7 @@ export class DifService {
       programaId: new Types.ObjectId(createApoyoDto.programaId),
       entregadoPor: new Types.ObjectId(userId),
       fecha: startOfDay(parseISO(createApoyoDto.fecha)),
-      // El folio se genera automáticamente en el pre-save hook del schema
+      folio: await this.generateFolioApoyo(municipioOId.toString()),
     });
 
     await apoyo.save();
@@ -559,23 +714,23 @@ export class DifService {
       {
         _id: inventario._id,
         municipioId: municipioOId,
-        stockActual: { $gte: cantidad }, // Solo actualiza si hay suficiente stock
+        stockActual: { $gte: cantidadDescontar }, // Solo actualiza si hay suficiente stock
       },
       {
-        $inc: { stockActual: -cantidad }, // Operación atómica
+        $inc: { stockActual: -cantidadDescontar }, // Operación atómica
       },
     );
 
     if (updateResult.matchedCount === 0) {
       throw new BadRequestException(
-        `Stock insuficiente. Disponible: ${stockAnterior}, Solicitado: ${cantidad}`,
+        `Stock insuficiente. Disponible: ${stockAnterior}, Solicitado: ${cantidadDescontar}`,
       );
     }
 
-    const stockNuevo = stockAnterior - cantidad;
+    const stockNuevo = stockAnterior - cantidadDescontar;
 
     // Generar folio secuencial
-    const folio = await this.generateFolioMovimiento();
+    const folio = await this.generateFolioMovimiento(municipioOId.toString());
 
     // Registrar movimiento de salida
     const movimiento = new this.movimientoInventarioModel({
@@ -584,7 +739,7 @@ export class DifService {
       inventarioId: inventario._id,
       tipoMovimiento: TipoMovimiento.OUT,
       tipoRecurso: createApoyoDto.tipo,
-      cantidad,
+      cantidad: cantidadDescontar,
       stockAnterior,
       stockNuevo,
       concepto: `Entrega de apoyo a beneficiario`,
@@ -663,6 +818,118 @@ export class DifService {
       .exec();
   }
 
+  async getApoyosDashboard(scope: any): Promise<any> {
+    const now = new Date();
+    const inicioMes = new Date(now.getFullYear(), now.getMonth(), 1);
+    const inicioMesAnterior = new Date(
+      now.getFullYear(),
+      now.getMonth() - 1,
+      1,
+    );
+    const finMesAnterior = new Date(
+      now.getFullYear(),
+      now.getMonth(),
+      0,
+      23,
+      59,
+      59,
+    );
+
+    const [
+      totalApoyos,
+      apoyosMes,
+      apoyosMesAnterior,
+      porPrograma,
+      porTipo,
+      beneficiariosUnicos,
+      recientes,
+    ] = await Promise.all([
+      // Total histórico
+      this.apoyoModel.countDocuments({ ...scope }),
+      // Apoyos este mes
+      this.apoyoModel.countDocuments({ ...scope, fecha: { $gte: inicioMes } }),
+      // Apoyos mes anterior
+      this.apoyoModel.countDocuments({
+        ...scope,
+        fecha: { $gte: inicioMesAnterior, $lte: finMesAnterior },
+      }),
+      // Agrupado por programa
+      this.apoyoModel.aggregate([
+        { $match: { ...scope } },
+        {
+          $group: {
+            _id: '$programaId',
+            total: { $sum: 1 },
+            monto: { $sum: '$monto' },
+          },
+        },
+        {
+          $lookup: {
+            from: 'dif_programas',
+            localField: '_id',
+            foreignField: '_id',
+            as: 'programa',
+          },
+        },
+        { $unwind: { path: '$programa', preserveNullAndEmptyArrays: true } },
+        {
+          $project: { _id: 1, total: 1, monto: 1, nombre: '$programa.nombre' },
+        },
+        { $sort: { total: -1 } },
+      ]),
+      // Agrupado por tipo
+      this.apoyoModel.aggregate([
+        { $match: { ...scope } },
+        {
+          $group: {
+            _id: '$tipo',
+            total: { $sum: 1 },
+            monto: { $sum: '$monto' },
+          },
+        },
+        { $sort: { total: -1 } },
+      ]),
+      // Beneficiarios únicos atendidos este mes
+      this.apoyoModel.distinct('beneficiarioId', {
+        ...scope,
+        fecha: { $gte: inicioMes },
+      }),
+      // Últimos 5 apoyos
+      this.apoyoModel
+        .find({ ...scope })
+        .populate(
+          'beneficiarioId',
+          'nombre apellidoPaterno apellidoMaterno curp',
+        )
+        .populate('programaId', 'nombre')
+        .sort({ fecha: -1 })
+        .limit(5)
+        .lean(),
+    ]);
+
+    const crecimiento =
+      apoyosMesAnterior > 0
+        ? Math.round(
+            ((apoyosMes - apoyosMesAnterior) / apoyosMesAnterior) * 100,
+          )
+        : apoyosMes > 0
+          ? 100
+          : 0;
+
+    return {
+      resumen: {
+        totalApoyos,
+        apoyosMes,
+        apoyosMesAnterior,
+        crecimientoMensual: crecimiento,
+        beneficiariosAtenidosMes: beneficiariosUnicos.length,
+      },
+      porPrograma,
+      porTipo,
+      recientes,
+    };
+  }
+
   async findApoyoById(id: string, scope: any): Promise<any> {
     const apoyo = await this.apoyoModel
       .findOne({
@@ -719,30 +986,38 @@ export class DifService {
     const stockAnterior = inventario?.stockActual || 0;
     const stockNuevo = stockAnterior + createEntradaDto.cantidad;
 
+    // Determinar tipo de inventario: usa el DTO o hereda del inventario existente
+    const tipoInventario =
+      createEntradaDto.tipoInventario ||
+      inventario?.tipoInventario ||
+      TipoInventario.FISICO;
+    const esMonetario = tipoInventario === TipoInventario.MONETARIO;
+
     if (!inventario) {
       // Crear inventario nuevo
       inventario = new this.inventarioModel({
         municipioId: new Types.ObjectId(municipioId),
         programaId: new Types.ObjectId(createEntradaDto.programaId),
         tipo: createEntradaDto.tipo,
+        tipoInventario,
         stockActual: createEntradaDto.cantidad,
         stockInicial: createEntradaDto.cantidad,
-        unidadMedida: 'piezas',
-        alertaMinima: 50,
-        valorUnitario: createEntradaDto.valorUnitario,
+        unidadMedida: esMonetario ? 'pesos' : 'piezas',
+        alertaMinima: esMonetario ? 0 : 50,
+        valorUnitario: esMonetario ? 1 : (createEntradaDto.valorUnitario ?? 0),
       });
       await inventario.save();
     } else {
       // Actualizar inventario existente
       inventario.stockActual = stockNuevo;
-      if (createEntradaDto.valorUnitario) {
+      if (!esMonetario && createEntradaDto.valorUnitario !== undefined) {
         inventario.valorUnitario = createEntradaDto.valorUnitario;
       }
       await inventario.save();
     }
 
     // Generar folio secuencial
-    const folio = await this.generateFolioMovimiento();
+    const folio = await this.generateFolioMovimiento(municipioId);
 
     // Crear movimiento
     const movimiento = new this.movimientoInventarioModel({
@@ -811,17 +1086,27 @@ export class DifService {
 
     if (createMovimientoDto.type === 'IN') {
       // ==================== ENTRADA (IN) ====================
+      // Determinar tipo de inventario
+      const tipoInventario =
+        createMovimientoDto.tipoInventario ||
+        inventario?.tipoInventario ||
+        TipoInventario.FISICO;
+      const esMonetario = tipoInventario === TipoInventario.MONETARIO;
+
       if (!inventario) {
         // Crear inventario nuevo
         inventario = new this.inventarioModel({
           municipioId: municipioOId,
           programaId: programaOId,
           tipo: createMovimientoDto.tipo,
+          tipoInventario,
           stockActual: cantidad,
           stockInicial: cantidad,
-          unidadMedida: 'piezas',
-          alertaMinima: 50,
-          valorUnitario: createMovimientoDto.valorUnitario || 0,
+          unidadMedida: esMonetario ? 'pesos' : 'piezas',
+          alertaMinima: esMonetario ? 0 : 50,
+          valorUnitario: esMonetario
+            ? 1
+            : createMovimientoDto.valorUnitario || 0,
         });
         await inventario.save();
 
@@ -837,8 +1122,8 @@ export class DifService {
           $inc: { stockActual: cantidad },
         };
 
-        // Actualizar valorUnitario si se proporciona
-        if (createMovimientoDto.valorUnitario !== undefined) {
+        // Actualizar valorUnitario si se proporciona (solo para FISICO)
+        if (!esMonetario && createMovimientoDto.valorUnitario !== undefined) {
           updateFields.$set = {
             valorUnitario: createMovimientoDto.valorUnitario,
           };
@@ -884,7 +1169,7 @@ export class DifService {
     }
 
     // Generar folio secuencial
-    const folio = await this.generateFolioMovimiento();
+    const folio = await this.generateFolioMovimiento(municipioOId.toString());
 
     // Crear movimiento
     const movimiento = new this.movimientoInventarioModel({
@@ -979,6 +1264,15 @@ export class DifService {
     if (updateDto.unidadMedida !== undefined) {
       inventario.unidadMedida = updateDto.unidadMedida;
     }
+    if (updateDto.tipoInventario !== undefined) {
+      inventario.tipoInventario = updateDto.tipoInventario;
+      // Ajustar defaults según tipo
+      if (updateDto.tipoInventario === TipoInventario.MONETARIO) {
+        inventario.unidadMedida = updateDto.unidadMedida ?? 'pesos';
+        inventario.valorUnitario = 1;
+        inventario.alertaMinima = updateDto.alertaMinima ?? 0;
+      }
+    }
 
     await inventario.save();
 
@@ -1026,62 +1320,12 @@ export class DifService {
 
   /**
    * Dashboard de inventario con métricas clave
+   * Separado en: inventario físico (unidades) y fondos monetarios (pesos)
    */
   async getInventarioDashboard(scope: any): Promise<any> {
     const municipioId = scope.municipioId;
+    const municipioOId = new Types.ObjectId(municipioId);
 
-    // 1. Total de items en inventario
-    const totalItems = await this.inventarioModel.countDocuments({
-      municipioId,
-    });
-
-    // 2. Items con stock crítico (por debajo de alerta mínima)
-    const itemsCriticosRaw = await this.inventarioModel
-      .find({
-        municipioId,
-        $expr: { $lte: ['$stockActual', '$alertaMinima'] },
-      })
-      .populate('programaId', 'nombre')
-      .sort({ stockActual: 1 })
-      .limit(10)
-      .lean();
-
-    // Formatear items críticos con cálculos adicionales
-    const itemsCriticos = itemsCriticosRaw.map((item: any) => {
-      const porcentajeStock =
-        item.alertaMinima > 0
-          ? Math.round((item.stockActual / item.alertaMinima) * 100)
-          : 0;
-
-      // Determinar estado basado en porcentaje
-      let estado: string;
-      if (porcentajeStock <= 30) {
-        estado = 'CRITICO';
-      } else if (porcentajeStock <= 60) {
-        estado = 'BAJO';
-      } else {
-        estado = 'NORMAL';
-      }
-
-      return {
-        id: item._id.toString(),
-        tipo: item.tipo,
-        programa: {
-          id: item.programaId._id.toString(),
-          nombre: item.programaId.nombre,
-        },
-        stockActual: item.stockActual,
-        alertaMinima: item.alertaMinima,
-        porcentajeStock,
-        estado,
-        unidadMedida: item.unidadMedida,
-        valorUnitario: item.valorUnitario,
-      };
-    });
-
-    const totalItemsCriticos = itemsCriticos.length;
-
-    // 3. Movimientos del mes actual
     const now = new Date();
     const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
     const endOfMonth = new Date(
@@ -1093,123 +1337,209 @@ export class DifService {
       59,
     );
 
-    const movimientosDelMes = await this.movimientoInventarioModel.aggregate([
+    // ─── 1. Inventario separado por tipo ───────────────────────────────────────
+    const [itemsFisicos, itemsMonetarios] = await Promise.all([
+      this.inventarioModel
+        .find({ municipioId, tipoInventario: TipoInventario.FISICO })
+        .populate('programaId', 'nombre')
+        .sort({ tipo: 1 })
+        .lean(),
+      this.inventarioModel
+        .find({ municipioId, tipoInventario: TipoInventario.MONETARIO })
+        .populate('programaId', 'nombre')
+        .sort({ tipo: 1 })
+        .lean(),
+    ]);
+
+    // ─── 2. Valor total inventario físico ──────────────────────────────────────
+    const valorTotalFisico = itemsFisicos.reduce(
+      (acc: number, item: any) =>
+        acc + item.stockActual * (item.valorUnitario || 0),
+      0,
+    );
+    const fondosDisponibles = itemsMonetarios.reduce(
+      (acc: number, item: any) => acc + item.stockActual,
+      0,
+    );
+
+    // ─── 3. Stock crítico (solo FISICO, alertaMinima > 0) ──────────────────────
+    const itemsCriticosRaw = (itemsFisicos as any[]).filter(
+      (item) => item.alertaMinima > 0 && item.stockActual <= item.alertaMinima,
+    );
+
+    const itemsCriticos = itemsCriticosRaw.map((item: any) => {
+      const porcentajeStock = Math.round(
+        (item.stockActual / item.alertaMinima) * 100,
+      );
+      const estado =
+        porcentajeStock <= 30
+          ? 'CRITICO'
+          : porcentajeStock <= 60
+            ? 'BAJO'
+            : 'NORMAL';
+      return {
+        id: item._id.toString(),
+        tipo: item.tipo,
+        programa: item.programaId
+          ? {
+              id: item.programaId._id.toString(),
+              nombre: item.programaId.nombre,
+            }
+          : null,
+        stockActual: item.stockActual,
+        alertaMinima: item.alertaMinima,
+        porcentajeStock,
+        estado,
+        unidadMedida: item.unidadMedida,
+        valorUnitario: item.valorUnitario,
+      };
+    });
+
+    // ─── 4. Movimientos del mes separados por tipoInventario ───────────────────
+    const movimientosMes = await this.movimientoInventarioModel.aggregate([
       {
         $match: {
-          municipioId: new Types.ObjectId(municipioId),
+          municipioId: municipioOId,
           fecha: { $gte: startOfMonth, $lte: endOfMonth },
         },
       },
       {
+        $lookup: {
+          from: 'dif_inventario',
+          localField: 'inventarioId',
+          foreignField: '_id',
+          as: 'inventario',
+        },
+      },
+      { $unwind: { path: '$inventario', preserveNullAndEmptyArrays: true } },
+      {
         $group: {
-          _id: '$tipoMovimiento',
+          _id: {
+            tipoMovimiento: '$tipoMovimiento',
+            tipoInventario: {
+              $ifNull: ['$inventario.tipoInventario', TipoInventario.FISICO],
+            },
+          },
           total: { $sum: 1 },
           cantidad: { $sum: '$cantidad' },
         },
       },
     ]);
 
-    // Formatear los movimientos del mes
-    let entradasTotal = 0;
-    let entradasCantidad = 0;
-    let salidasTotal = 0;
-    let salidasCantidad = 0;
-
-    movimientosDelMes.forEach((mov) => {
-      if (mov._id === 'IN') {
-        entradasTotal = mov.total;
-        entradasCantidad = mov.cantidad;
-      } else if (mov._id === 'OUT') {
-        salidasTotal = mov.total;
-        salidasCantidad = mov.cantidad;
+    // Parsear resultado del agregado
+    const movStats = {
+      fisico: { IN: { total: 0, cantidad: 0 }, OUT: { total: 0, cantidad: 0 } },
+      monetario: {
+        IN: { total: 0, cantidad: 0 },
+        OUT: { total: 0, cantidad: 0 },
+      },
+    };
+    movimientosMes.forEach((m: any) => {
+      const tipoInv =
+        m._id.tipoInventario === TipoInventario.MONETARIO
+          ? 'monetario'
+          : 'fisico';
+      const tipoMov = m._id.tipoMovimiento as 'IN' | 'OUT';
+      if (tipoMov === 'IN' || tipoMov === 'OUT') {
+        movStats[tipoInv][tipoMov].total = m.total;
+        movStats[tipoInv][tipoMov].cantidad = m.cantidad;
       }
     });
 
-    const balance = entradasCantidad - salidasCantidad;
-
-    // 4. Últimos movimientos del mes (para tabla en frontend)
-    const ultimosMovimientos = await this.movimientoInventarioModel
+    // ─── 5. Últimos 15 movimientos con tipo de inventario ─────────────────────
+    const ultimosMovimientosRaw = await this.movimientoInventarioModel
       .find({
-        municipioId: new Types.ObjectId(municipioId),
+        municipioId: municipioOId,
         fecha: { $gte: startOfMonth, $lte: endOfMonth },
       })
       .populate('programaId', 'nombre')
       .populate('responsable', 'nombre email')
-      .populate('inventarioId', 'tipo')
+      .populate('inventarioId', 'tipo tipoInventario')
       .populate('apoyoId', 'folio')
       .sort({ fecha: -1, createdAt: -1 })
-      .limit(10)
+      .limit(15)
       .lean();
 
-    const movimientosFormateados = ultimosMovimientos.map((mov: any) => ({
+    const ultimosMovimientos = ultimosMovimientosRaw.map((mov: any) => ({
       id: mov._id.toString(),
       fecha: mov.fecha,
       tipoMovimiento: mov.tipoMovimiento,
+      tipoInventario: mov.inventarioId?.tipoInventario || TipoInventario.FISICO,
       tipo: mov.tipoRecurso,
       programa: mov.programaId
-        ? {
-            id: mov.programaId._id.toString(),
-            nombre: mov.programaId.nombre,
-          }
+        ? { id: mov.programaId._id.toString(), nombre: mov.programaId.nombre }
         : null,
       cantidad: mov.cantidad,
       stockAnterior: mov.stockAnterior,
       stockNuevo: mov.stockNuevo,
       concepto: mov.concepto,
       responsable: mov.responsable
-        ? {
-            nombre: mov.responsable.nombre,
-            email: mov.responsable.email,
-          }
+        ? { nombre: mov.responsable.nombre, email: mov.responsable.email }
         : null,
       folio: mov.folio,
       apoyoFolio: mov.apoyoId?.folio || null,
       comprobante: mov.comprobante,
     }));
 
-    // 5. Valor total del inventario
-    const valorTotal = await this.inventarioModel.aggregate([
-      {
-        $match: {
-          municipioId: new Types.ObjectId(municipioId),
-        },
-      },
-      {
-        $project: {
-          valorTotal: {
-            $multiply: ['$stockActual', { $ifNull: ['$valorUnitario', 0] }],
-          },
-        },
-      },
-      {
-        $group: {
-          _id: null,
-          total: { $sum: '$valorTotal' },
-        },
-      },
-    ]);
+    // ─── 6. Fondos monetarios: lista enriquecida ──────────────────────────────
+    const fondos = (itemsMonetarios as any[]).map((item: any) => ({
+      id: item._id.toString(),
+      tipo: item.tipo,
+      programa: item.programaId
+        ? { id: item.programaId._id.toString(), nombre: item.programaId.nombre }
+        : null,
+      disponible: item.stockActual,
+      totalIngresado: item.stockInicial,
+      utilizado: item.stockInicial - item.stockActual,
+      porcentajeUtilizado:
+        item.stockInicial > 0
+          ? Math.round(
+              ((item.stockInicial - item.stockActual) / item.stockInicial) *
+                100,
+            )
+          : 0,
+    }));
 
     return {
       resumen: {
-        totalItems,
-        valorTotalInventario: valorTotal[0]?.total || 0,
+        totalArticulosFisicos: itemsFisicos.length,
+        totalFondosMonetarios: itemsMonetarios.length,
+        valorTotalInventarioFisico: valorTotalFisico,
+        fondosDisponibles,
       },
-      stockCritico: {
-        total: totalItemsCriticos,
-        items: itemsCriticos,
-      },
-      movimientosDelMes: {
-        entradas: {
-          totalMovimientos: entradasTotal,
-          cantidadTotal: entradasCantidad,
+      inventarioFisico: {
+        stockCritico: {
+          total: itemsCriticos.length,
+          items: itemsCriticos,
         },
-        salidas: {
-          totalMovimientos: salidasTotal,
-          cantidadTotal: salidasCantidad,
+        movimientosDelMes: {
+          entradas: {
+            totalMovimientos: movStats.fisico.IN.total,
+            cantidadTotal: movStats.fisico.IN.cantidad,
+          },
+          salidas: {
+            totalMovimientos: movStats.fisico.OUT.total,
+            cantidadTotal: movStats.fisico.OUT.cantidad,
+          },
+          balance: movStats.fisico.IN.cantidad - movStats.fisico.OUT.cantidad,
         },
-        balance,
-        ultimosMovimientos: movimientosFormateados,
       },
+      fondosMonetarios: {
+        fondos,
+        movimientosDelMes: {
+          entradas: {
+            totalMovimientos: movStats.monetario.IN.total,
+            montoTotal: movStats.monetario.IN.cantidad,
+          },
+          salidas: {
+            totalMovimientos: movStats.monetario.OUT.total,
+            montoTotal: movStats.monetario.OUT.cantidad,
+          },
+          balance:
+            movStats.monetario.IN.cantidad - movStats.monetario.OUT.cantidad,
+        },
+      },
+      ultimosMovimientos,
     };
   }
 }

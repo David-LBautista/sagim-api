@@ -8,6 +8,9 @@ export class Beneficiario {
   @Prop({ type: Types.ObjectId, ref: 'Municipality', required: true })
   municipioId: Types.ObjectId;
 
+  @Prop({ sparse: true })
+  folio?: string;
+
   @Prop({ required: true })
   nombre: string;
 
@@ -62,6 +65,13 @@ export const BeneficiarioSchema = SchemaFactory.createForClass(Beneficiario);
 // Indexes
 BeneficiarioSchema.index({ municipioId: 1 });
 BeneficiarioSchema.index({ curp: 1, municipioId: 1 }, { unique: true });
+BeneficiarioSchema.index({ municipioId: 1, folio: 1 }, { unique: true, sparse: true });
 BeneficiarioSchema.index({ grupoVulnerable: 1 });
 BeneficiarioSchema.index({ activo: 1 });
 BeneficiarioSchema.index({ nombre: 1, apellidoPaterno: 1 });
+
+// Compound indexes (ESR)
+// getBeneficiariosPorLocalidad, getResumenDIF (localidadesAtendidas)
+BeneficiarioSchema.index({ municipioId: 1, localidad: 1 });
+// findBeneficiarios con filtro activo
+BeneficiarioSchema.index({ municipioId: 1, activo: 1 });

@@ -79,3 +79,7 @@ OrdenPagoSchema.index({ municipioId: 1, estado: 1 });
 OrdenPagoSchema.index({ servicioId: 1 });
 OrdenPagoSchema.index({ predioId: 1, createdAt: -1 });
 OrdenPagoSchema.index({ expiresAt: 1 }, { expireAfterSeconds: 0 }); // TTL index para auto-expirar
+
+// Compound index (ESR)
+// Alerta ORDENES_POR_EXPIRAR: municipioId + estado (equality) + expiresAt (range)
+OrdenPagoSchema.index({ municipioId: 1, estado: 1, expiresAt: 1 });

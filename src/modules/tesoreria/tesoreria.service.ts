@@ -15,7 +15,11 @@ import {
   OrdenPagoStatus,
 } from '../pagos/schemas/orden-pago.schema';
 import { Pago, PagoDocument } from '../pagos/schemas/pago.schema';
-import { CreateServicioCobroDto, CreateOrdenPagoTesoreriaDto } from './dto';
+import {
+  CreateServicioCobroDto,
+  CreateOrdenPagoTesoreriaDto,
+  UpsertServicioOverrideDto,
+} from './dto';
 import { v4 as uuidv4 } from 'uuid';
 
 @Injectable()
@@ -30,6 +34,59 @@ export class TesoreriaService {
   ) {}
 
   // ==================== SERVICIOS COBRABLES ====================
+
+  // ── Merge: catálogo global + overrides del municipio ────────────────
+  async findServiciosByMunicipio(
+    municipioId: string,
+  ): Promise<ServicioCobro[]> {
+    const [globales, overrides] = await Promise.all([
+      this.servicioCobroModel.find({ municipioId: null, activo: true }).lean(),
+      this.servicioCobroModel
+        .find({ municipioId: new Types.ObjectId(municipioId) })
+        .lean(),
+    ]);
+
+    const overrideMap = new Map(overrides.map((s) => [s.clave, s]));
+
+    const merged = globales
+      .map((global) => overrideMap.get(global.clave) ?? global)
+      .filter((s) => s.activo)
+      .concat(
+        overrides.filter(
+          (o) => !globales.find((g) => g.clave === o.clave) && o.activo,
+        ),
+      )
+      .sort((a, b) => (a.orden ?? 0) - (b.orden ?? 0));
+
+    return merged as unknown as ServicioCobro[];
+  }
+
+  // ── Override: municipio crea/actualiza su versión de un servicio ─────
+  async upsertOverride(
+    municipioId: string,
+    clave: string,
+    changes: UpsertServicioOverrideDto,
+  ): Promise<ServicioCobro> {
+    // Solo se pueden hacer overrides de servicios que existen en el catálogo global
+    const globalExiste = await this.servicioCobroModel.findOne({
+      municipioId: null,
+      clave,
+    });
+
+    if (!globalExiste) {
+      throw new NotFoundException(
+        `Servicio con clave "${clave}" no existe en el catálogo global. ` +
+          `Para crear servicios propios del municipio usa POST /tesoreria/servicios.`,
+      );
+    }
+
+    const mId = new Types.ObjectId(municipioId);
+    return this.servicioCobroModel.findOneAndUpdate(
+      { municipioId: mId, clave },
+      { $set: { ...changes, municipioId: mId, clave } },
+      { upsert: true, new: true },
+    );
+  }
 
   async createServicio(
     createServicioDto: CreateServicioCobroDto,

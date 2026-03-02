@@ -2,6 +2,7 @@ import {
   Injectable,
   NotFoundException,
   ConflictException,
+  BadRequestException,
   Inject,
   LoggerService,
 } from '@nestjs/common';
@@ -14,7 +15,11 @@ import {
 } from './schemas/municipality.schema';
 import { Programa, ProgramaDocument } from '../dif/schemas/programa.schema';
 import { User, UserDocument } from '../users/schemas/user.schema';
-import { CreateMunicipalityDto, UpdateMunicipalityConfigDto } from './dto';
+import {
+  CreateMunicipalityDto,
+  UpdateMunicipalityConfigDto,
+  UpdateMunicipalityDto,
+} from './dto';
 import { CloudinaryService } from '../cloudinary/cloudinary.service';
 import * as bcrypt from 'bcrypt';
 import { UserRole } from '@/shared/enums';
@@ -140,7 +145,7 @@ export class MunicipalitiesService {
     return municipality;
   }
 
-  async findAll(): Promise<MunicipalityDocument[]> {
+  async findAll(): Promise<any[]> {
     const municipalities = await this.municipalityModel
       .find()
       .populate('estadoId', 'nombre clave')
@@ -148,20 +153,47 @@ export class MunicipalitiesService {
       .sort({ nombre: 1 })
       .lean();
 
-    return municipalities as unknown as MunicipalityDocument[];
+    // Obtener admins de todos los municipios en una sola query
+    const municipioIds = municipalities.map((m: any) => m._id);
+    const admins = await this.userModel
+      .find(
+        { municipioId: { $in: municipioIds }, rol: UserRole.ADMIN_MUNICIPIO },
+        { nombre: 1, email: 1, telefono: 1, municipioId: 1, activo: 1 },
+      )
+      .lean();
+
+    const adminMap = new Map(
+      admins.map((a: any) => [a.municipioId.toString(), a]),
+    );
+
+    return municipalities.map((m: any) => ({
+      ...m,
+      admin: adminMap.get(m._id.toString()) ?? null,
+    }));
   }
 
-  async findOne(id: string): Promise<MunicipalityDocument> {
+  async findOne(id: string): Promise<any> {
     const municipality = await this.municipalityModel
       .findById(id)
       .populate('estadoId', 'nombre clave')
+      .select('-__v')
       .lean();
 
     if (!municipality) {
       throw new NotFoundException('Municipio no encontrado');
     }
 
-    return municipality as unknown as MunicipalityDocument;
+    const admin = await this.userModel
+      .findOne(
+        {
+          municipioId: (municipality as any)._id,
+          rol: UserRole.ADMIN_MUNICIPIO,
+        },
+        { nombre: 1, email: 1, telefono: 1, activo: 1 },
+      )
+      .lean();
+
+    return { ...(municipality as any), admin: admin ?? null };
   }
 
   async updateConfig(
@@ -184,5 +216,116 @@ export class MunicipalitiesService {
     );
 
     return updatedMunicipality as unknown as MunicipalityDocument;
+  }
+
+  async update(
+    id: string,
+    updateDto: UpdateMunicipalityDto,
+    logo?: Express.Multer.File,
+  ): Promise<MunicipalityDocument> {
+    const municipality = await this.municipalityModel.findById(id);
+
+    if (!municipality) {
+      throw new NotFoundException('Municipio no encontrado');
+    }
+
+    const {
+      adminNombre,
+      adminEmail,
+      adminPassword,
+      adminTelefono,
+      config,
+      ...municipioFields
+    } = updateDto;
+
+    // Actualizar campos del municipio
+    const municipioUpdate: Record<string, any> = { ...municipioFields };
+
+    // Subir nuevo logo si se envió
+    if (logo) {
+      const uploadResult = await this.cloudinaryService.uploadImage(
+        logo,
+        'municipios/logos',
+      );
+      municipioUpdate.logoUrl = uploadResult.secure_url;
+    }
+
+    if (config) {
+      municipioUpdate.config = {
+        ...municipality.config,
+        ...config,
+        modulos: {
+          ...(municipality.config?.modulos ?? {}),
+          ...(config.modulos ?? {}),
+        },
+      };
+    }
+
+    const updatedMunicipality = await this.municipalityModel
+      .findByIdAndUpdate(id, { $set: municipioUpdate }, { new: true })
+      .populate('estadoId', 'nombre clave')
+      .lean();
+
+    // Crear o actualizar usuario ADMIN_MUNICIPIO si se enviaron datos del admin
+    if (adminNombre || adminEmail || adminPassword || adminTelefono) {
+      const adminExistente = await this.userModel.findOne({
+        municipioId: new Types.ObjectId(id),
+        rol: UserRole.ADMIN_MUNICIPIO,
+      });
+
+      if (adminExistente) {
+        // Actualizar campos enviados
+        const adminUpdate: Record<string, any> = {};
+        if (adminNombre) adminUpdate.nombre = adminNombre;
+        if (adminEmail) adminUpdate.email = adminEmail.toLowerCase();
+        if (adminTelefono) adminUpdate.telefono = adminTelefono;
+        if (adminPassword) {
+          adminUpdate.password = await bcrypt.hash(adminPassword, 10);
+        }
+        await this.userModel.updateOne(
+          { _id: adminExistente._id },
+          { $set: adminUpdate },
+        );
+        this.logger.log(
+          `Admin actualizado para municipio: ${municipality.nombre} (${adminExistente.email})`,
+          'MunicipalitiesService',
+        );
+      } else {
+        // Crear nuevo admin — requiere email, nombre y password
+        if (!adminEmail || !adminNombre || !adminPassword) {
+          throw new BadRequestException(
+            'Para crear el administrador se requieren adminEmail, adminNombre y adminPassword',
+          );
+        }
+        const hashedPassword = await bcrypt.hash(adminPassword, 10);
+        await this.userModel.create({
+          nombre: adminNombre,
+          email: adminEmail.toLowerCase(),
+          password: hashedPassword,
+          telefono: adminTelefono ?? undefined,
+          rol: UserRole.ADMIN_MUNICIPIO,
+          municipioId: new Types.ObjectId(id),
+          activo: true,
+        });
+        this.logger.log(
+          `Admin creado para municipio: ${municipality.nombre} (${adminEmail})`,
+          'MunicipalitiesService',
+        );
+      }
+    }
+
+    this.logger.log(
+      `Municipio actualizado: ${municipality.nombre}`,
+      'MunicipalitiesService',
+    );
+
+    const admin = await this.userModel
+      .findOne(
+        { municipioId: new Types.ObjectId(id), rol: UserRole.ADMIN_MUNICIPIO },
+        { nombre: 1, email: 1, telefono: 1, activo: 1 },
+      )
+      .lean();
+
+    return { ...(updatedMunicipality as any), admin: admin ?? null };
   }
 }

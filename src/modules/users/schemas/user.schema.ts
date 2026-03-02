@@ -4,12 +4,27 @@ import { UserRole } from '@/shared/enums';
 
 export type UserDocument = User & Document;
 
-@Schema({ collection: 'auth_users', timestamps: true })
+@Schema({
+  collection: 'auth_users',
+  timestamps: true,
+  toJSON: {
+    transform: (_doc, ret: any) => {
+      ret.telefono = ret.telefono ?? null;
+      ret.moduloId = ret.moduloId ?? null;
+      ret.municipioId = ret.municipioId ?? null;
+      ret.avatar = ret.avatar ?? null;
+      ret.ultimoAcceso = ret.ultimoAcceso ?? null;
+      delete ret.password;
+      delete ret.refreshToken;
+      return ret;
+    },
+  },
+})
 export class User {
-  @Prop({ type: Types.ObjectId, ref: 'Municipality' })
+  @Prop({ type: Types.ObjectId, ref: 'Municipality', default: null })
   municipioId?: Types.ObjectId;
 
-  @Prop({ type: Types.ObjectId, ref: 'Modulo' })
+  @Prop({ type: Types.ObjectId, ref: 'Modulo', default: null })
   moduloId?: Types.ObjectId; // Solo para rol OPERATIVO
 
   @Prop({ required: true })
@@ -28,10 +43,10 @@ export class User {
   @Prop({ default: true })
   activo: boolean;
 
-  @Prop()
+  @Prop({ default: null })
   telefono?: string;
 
-  @Prop()
+  @Prop({ default: null })
   avatar?: string;
 
   @Prop()

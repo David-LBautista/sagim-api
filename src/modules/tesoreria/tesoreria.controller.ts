@@ -12,7 +12,11 @@ import {
 } from '@nestjs/common';
 import { Request } from 'express';
 import { TesoreriaService } from './tesoreria.service';
-import { CreateServicioCobroDto, CreateOrdenPagoTesoreriaDto } from './dto';
+import {
+  CreateServicioCobroDto,
+  CreateOrdenPagoTesoreriaDto,
+  UpsertServicioOverrideDto,
+} from './dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '@/common/guards';
 import { Roles, MunicipalityId, TenantScope } from '@/common/decorators';
@@ -45,9 +49,32 @@ export class TesoreriaController {
 
   @Get('servicios')
   @Roles(UserRole.SUPER_ADMIN, UserRole.ADMIN_MUNICIPIO, UserRole.OPERATIVO)
-  @ApiOperation({ summary: 'Listar servicios cobrables activos' })
-  findAllServicios(@TenantScope() scope: any) {
-    return this.tesoreriaService.findAllServicios(scope);
+  @ApiOperation({
+    summary:
+      'Listar servicios cobrables activos (global + overrides del municipio)',
+  })
+  findAllServicios(@MunicipalityId() municipioId: string) {
+    return this.tesoreriaService.findServiciosByMunicipio(
+      municipioId.toString(),
+    );
+  }
+
+  @Patch('servicios/:clave/override')
+  @Roles(UserRole.SUPER_ADMIN, UserRole.ADMIN_MUNICIPIO)
+  @ApiOperation({
+    summary:
+      'Crear o actualizar el override de un servicio global para este municipio',
+  })
+  upsertOverride(
+    @Param('clave') clave: string,
+    @Body() dto: UpsertServicioOverrideDto,
+    @MunicipalityId() municipioId: string,
+  ) {
+    return this.tesoreriaService.upsertOverride(
+      municipioId.toString(),
+      clave,
+      dto,
+    );
   }
 
   @Get('servicios/:id')

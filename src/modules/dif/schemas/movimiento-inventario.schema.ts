@@ -72,4 +72,5 @@ MovimientoInventarioSchema.index({ programaId: 1 });
 MovimientoInventarioSchema.index({ inventarioId: 1 });
 MovimientoInventarioSchema.index({ tipoMovimiento: 1 });
 MovimientoInventarioSchema.index({ fecha: -1 });
-MovimientoInventarioSchema.index({ folio: 1 }, { unique: true });
+MovimientoInventarioSchema.index({ folio: 1 });
+MovimientoInventarioSchema.index({ municipioId: 1, folio: 1 }, { unique: true });

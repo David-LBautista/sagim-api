@@ -13,6 +13,10 @@ import {
   ServicioCobroSchema,
 } from '@/modules/tesoreria/schemas/servicio-cobro.schema';
 import { Apoyo, ApoyoSchema } from '@/modules/dif/schemas/apoyo.schema';
+import {
+  Beneficiario,
+  BeneficiarioSchema,
+} from '@/modules/dif/schemas/beneficiario.schema';
 import { AuditoriaModule } from '@/modules/auditoria/auditoria.module';
 
 @Module({
@@ -22,6 +26,7 @@ import { AuditoriaModule } from '@/modules/auditoria/auditoria.module';
       { name: OrdenPago.name, schema: OrdenPagoSchema },
       { name: ServicioCobro.name, schema: ServicioCobroSchema },
       { name: Apoyo.name, schema: ApoyoSchema },
+      { name: Beneficiario.name, schema: BeneficiarioSchema },
     ]),
     AuditoriaModule, // Importar para usar AuditoriaService
   ],

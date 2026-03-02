@@ -14,6 +14,18 @@ export class Programa {
   @Prop({ required: true })
   descripcion: string;
 
+  @Prop()
+  clave?: string; // Identificador único slug, ej: DESPENSAS_DIF
+
+  @Prop({ enum: ['municipal', 'estatal', 'federal'], default: 'municipal' })
+  nivel?: string;
+
+  @Prop()
+  categoria?: string; // Alimentación, Salud, Discapacidad, etc.
+
+  @Prop({ type: [String], default: [] })
+  tiposApoyo?: string[]; // Subtipos disponibles en este programa
+
   @Prop({ default: true })
   activo: boolean;
 
@@ -37,5 +49,8 @@ export const ProgramaSchema = SchemaFactory.createForClass(Programa);
 
 // Indexes
 ProgramaSchema.index({ municipioId: 1 });
+ProgramaSchema.index({ clave: 1 });
 ProgramaSchema.index({ nombre: 1 });
+ProgramaSchema.index({ nivel: 1 });
+ProgramaSchema.index({ categoria: 1 });
 ProgramaSchema.index({ activo: 1 });

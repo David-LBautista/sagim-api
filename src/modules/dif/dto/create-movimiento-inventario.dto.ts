@@ -9,6 +9,7 @@ import {
   Min,
 } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
+import { TipoInventario } from '../schemas/inventario.schema';
 
 export enum TipoMovimientoInventario {
   IN = 'IN',
@@ -37,7 +38,22 @@ export class CreateMovimientoInventarioDto {
   @IsNotEmpty()
   tipo: string;
 
-  @ApiProperty({ example: 1500, description: 'Cantidad del movimiento' })
+  @ApiProperty({
+    enum: TipoInventario,
+    default: TipoInventario.FISICO,
+    description:
+      'FISICO = artículos/unidades contables. MONETARIO = fondo en pesos',
+    required: false,
+  })
+  @IsEnum(TipoInventario)
+  @IsOptional()
+  tipoInventario?: TipoInventario;
+
+  @ApiProperty({
+    example: 1500,
+    description:
+      'Cantidad del movimiento (unidades si FISICO, pesos si MONETARIO)',
+  })
   @IsNumber()
   @Min(1)
   @IsNotEmpty()

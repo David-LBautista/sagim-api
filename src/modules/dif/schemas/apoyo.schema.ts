@@ -75,18 +75,11 @@ ApoyoSchema.index({ beneficiarioId: 1 });
 ApoyoSchema.index({ programaId: 1 });
 ApoyoSchema.index({ fecha: -1 });
 ApoyoSchema.index({ tipo: 1 });
-ApoyoSchema.index({ folio: 1 }, { unique: true });
+ApoyoSchema.index({ folio: 1 });
+ApoyoSchema.index({ municipioId: 1, folio: 1 }, { unique: true });
 
-// Pre-save hook to generate folio
-ApoyoSchema.pre('save', async function (next) {
-  if (!this.folio) {
-    const date = new Date();
-    const year = date.getFullYear().toString().slice(-2);
-    const month = (date.getMonth() + 1).toString().padStart(2, '0');
-    const random = Math.floor(Math.random() * 10000)
-      .toString()
-      .padStart(4, '0');
-    this.folio = `DIF-${year}${month}-${random}`;
-  }
-  next();
-});
+// Compound indexes (ESR: Equality → Sort → Range)
+// Dashboard: comparativo mensual, getResumenDIF, alertas de duplicidad
+ApoyoSchema.index({ municipioId: 1, fecha: -1 });
+ApoyoSchema.index({ municipioId: 1, beneficiarioId: 1, fecha: -1 });
+ApoyoSchema.index({ municipioId: 1, programaId: 1, fecha: -1 });

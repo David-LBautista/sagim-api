@@ -20,7 +20,11 @@ import {
   ApiBody,
 } from '@nestjs/swagger';
 import { MunicipalitiesService } from './municipalities.service';
-import { CreateMunicipalityDto, UpdateMunicipalityConfigDto } from './dto';
+import {
+  CreateMunicipalityDto,
+  UpdateMunicipalityConfigDto,
+  UpdateMunicipalityDto,
+} from './dto';
 import { Roles } from '@/common/decorators/roles.decorator';
 import { UserRole } from '@/shared/enums';
 
@@ -86,6 +90,59 @@ export class MunicipalitiesController {
   @ApiResponse({ status: 404, description: 'Municipio no encontrado' })
   async findOne(@Param('id') id: string) {
     return this.municipalitiesService.findOne(id);
+  }
+
+  @Patch(':id')
+  @Roles(UserRole.SUPER_ADMIN, UserRole.ADMIN_MUNICIPIO)
+  @UseInterceptors(FileInterceptor('logo'))
+  @ApiConsumes('multipart/form-data')
+  @ApiOperation({
+    summary:
+      'Actualizar municipio: contacto, admin, módulos y logo (SUPER_ADMIN o ADMIN)',
+  })
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: {
+        logo: {
+          type: 'string',
+          format: 'binary',
+          description: 'Logo del municipio (opcional)',
+        },
+        contactoEmail: { type: 'string', example: 'contacto@municipio.gob.mx' },
+        contactoTelefono: { type: 'string', example: '2721234567' },
+        direccion: { type: 'string', example: 'Av. Principal #123' },
+        adminNombre: { type: 'string', example: 'Ruth Garcia Meza' },
+        adminEmail: {
+          type: 'string',
+          example: 'ruth.garcia@laperla.sagim.com',
+        },
+        adminPassword: { type: 'string', example: 'NuevoPassword123!' },
+        adminTelefono: {
+          type: 'string',
+          example: '2721234567',
+          description: 'Teléfono del administrador',
+        },
+        config: {
+          type: 'string',
+          example: '{"modulos":{"PRESIDENCIA":true,"DIF":true}}',
+          description: 'Configuración de módulos en formato JSON string',
+        },
+      },
+    },
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Municipio actualizado exitosamente',
+  })
+  @ApiResponse({ status: 404, description: 'Municipio no encontrado' })
+  @ApiResponse({ status: 403, description: 'No autorizado' })
+  async update(
+    @Param('id') id: string,
+    @Body() updateDto: UpdateMunicipalityDto,
+    @UploadedFile() logo?: Express.Multer.File,
+  ) {
+    return this.municipalitiesService.update(id, updateDto, logo);
   }
 
   @Patch(':id/config')

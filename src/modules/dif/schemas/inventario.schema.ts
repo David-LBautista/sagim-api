@@ -1,6 +1,11 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { Document, Types } from 'mongoose';
 
+export enum TipoInventario {
+  FISICO = 'FISICO',
+  MONETARIO = 'MONETARIO',
+}
+
 export type InventarioDocument = Inventario & Document;
 
 @Schema({ collection: 'dif_inventario', timestamps: true })
@@ -13,6 +18,14 @@ export class Inventario {
 
   @Prop({ type: String, required: true })
   tipo: string;
+
+  @Prop({
+    type: String,
+    enum: TipoInventario,
+    default: TipoInventario.FISICO,
+    required: true,
+  })
+  tipoInventario: TipoInventario;
 
   @Prop({ type: Number, required: true, default: 0 })
   stockActual: number;
@@ -42,6 +55,7 @@ export const InventarioSchema = SchemaFactory.createForClass(Inventario);
 InventarioSchema.index({ municipioId: 1 });
 InventarioSchema.index({ programaId: 1 });
 InventarioSchema.index({ tipo: 1 });
+InventarioSchema.index({ tipoInventario: 1 });
 InventarioSchema.index({ programaId: 1, tipo: 1 }, { unique: true }); // Un inventario por programa+tipo
 
 // Virtual para saber si está en alerta

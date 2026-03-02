@@ -11,6 +11,10 @@ import {
   ServicioCobroDocument,
 } from '@/modules/tesoreria/schemas/servicio-cobro.schema';
 import { Apoyo, ApoyoDocument } from '@/modules/dif/schemas/apoyo.schema';
+import {
+  Beneficiario,
+  BeneficiarioDocument,
+} from '@/modules/dif/schemas/beneficiario.schema';
 
 @Injectable()
 export class DashboardService {
@@ -21,6 +25,8 @@ export class DashboardService {
     @InjectModel(ServicioCobro.name)
     private servicioCobroModel: Model<ServicioCobroDocument>,
     @InjectModel(Apoyo.name) private apoyoModel: Model<ApoyoDocument>,
+    @InjectModel(Beneficiario.name)
+    private beneficiarioModel: Model<BeneficiarioDocument>,
   ) {}
 
   // ==========================================
@@ -334,75 +340,43 @@ export class DashboardService {
   async getResumenDIF(municipioId: string) {
     const municipioObjectId = new Types.ObjectId(municipioId);
 
-    const [apoyosStats, localidades] = await Promise.all([
-      this.apoyoModel.aggregate([
-        {
-          $match: {
-            municipioId: municipioObjectId,
-            estado: { $in: ['ENTREGADO', 'PENDIENTE'] },
-          },
+    // Paso 1: estadísticas desde dif_apoyos
+    const apoyosStats = await this.apoyoModel.aggregate([
+      { $match: { municipioId: municipioObjectId } },
+      {
+        $facet: {
+          totales: [{ $count: 'total' }],
+          beneficiarios: [
+            { $group: { _id: '$beneficiarioId' } },
+            { $count: 'total' },
+          ],
+          programas: [{ $group: { _id: '$programaId' } }, { $count: 'total' }],
         },
-        {
-          $facet: {
-            totales: [
-              {
-                $group: {
-                  _id: null,
-                  apoyosEntregados: {
-                    $sum: { $cond: [{ $eq: ['$estado', 'ENTREGADO'] }, 1, 0] },
-                  },
-                  apoyosPendientes: {
-                    $sum: { $cond: [{ $eq: ['$estado', 'PENDIENTE'] }, 1, 0] },
-                  },
-                },
-              },
-            ],
-            beneficiarios: [
-              {
-                $match: { estado: 'ENTREGADO' },
-              },
-              {
-                $group: {
-                  _id: '$ciudadanoId',
-                },
-              },
-              {
-                $count: 'total',
-              },
-            ],
-            programas: [
-              {
-                $group: {
-                  _id: '$programaDIF',
-                },
-              },
-              {
-                $count: 'total',
-              },
-            ],
-          },
-        },
-      ]),
-      this.apoyoModel.distinct('localidad', {
-        municipioId: municipioObjectId,
-        estado: 'ENTREGADO',
-      }),
+      },
     ]);
 
     const stats = apoyosStats[0];
-    const totales = stats.totales[0] || {
-      apoyosEntregados: 0,
-      apoyosPendientes: 0,
-    };
+    const totalApoyos = stats.totales[0]?.total || 0;
     const beneficiariosUnicos = stats.beneficiarios[0]?.total || 0;
     const programasActivos = stats.programas[0]?.total || 0;
 
+    // Paso 2: localidades atendidas — localidad está en dif_beneficiarios
+    const beneficiarioIdsConApoyo = await this.apoyoModel.distinct(
+      'beneficiarioId',
+      { municipioId: municipioObjectId },
+    );
+
+    const localidades = await this.beneficiarioModel.distinct('localidad', {
+      _id: { $in: beneficiarioIdsConApoyo },
+      localidad: { $exists: true, $ne: null },
+    });
+
     return {
       beneficiariosUnicos,
-      apoyosEntregados: totales.apoyosEntregados,
-      apoyosPendientes: totales.apoyosPendientes,
+      apoyosEntregados: totalApoyos,
+      apoyosPendientes: 0,
       programasActivos,
-      localidadesAtendidas: localidades.length,
+      localidadesAtendidas: localidades.filter(Boolean).length,
     };
   }
 
@@ -411,27 +385,34 @@ export class DashboardService {
 
     const apoyos = await this.apoyoModel.aggregate([
       {
-        $match: {
-          municipioId: municipioObjectId,
-          estado: 'ENTREGADO',
-        },
+        $match: { municipioId: municipioObjectId },
       },
       {
         $group: {
-          _id: '$programaDIF',
+          _id: '$programaId',
           total: { $count: {} },
         },
       },
       {
-        $project: {
-          _id: 0,
-          programa: '$_id',
-          total: 1,
+        $lookup: {
+          from: 'dif_programas',
+          localField: '_id',
+          foreignField: '_id',
+          as: 'programaInfo',
         },
       },
       {
-        $sort: { total: -1 },
+        $unwind: { path: '$programaInfo', preserveNullAndEmptyArrays: true },
       },
+      {
+        $project: {
+          _id: 0,
+          programaId: '$_id',
+          programa: { $ifNull: ['$programaInfo.nombre', 'SIN_PROGRAMA'] },
+          total: 1,
+        },
+      },
+      { $sort: { total: -1 } },
     ]);
 
     return apoyos;
@@ -440,24 +421,24 @@ export class DashboardService {
   async getBeneficiariosPorLocalidad(municipioId: string) {
     const municipioObjectId = new Types.ObjectId(municipioId);
 
-    const beneficiarios = await this.apoyoModel.aggregate([
+    // Obtener beneficiarioIds únicos con al menos un apoyo en este municipio
+    const beneficiarioIdsConApoyo = await this.apoyoModel.distinct(
+      'beneficiarioId',
+      { municipioId: municipioObjectId },
+    );
+
+    // Agrupar por localidad desde dif_beneficiarios (localidad está ahí, no en apoyos)
+    const result = await this.beneficiarioModel.aggregate([
       {
         $match: {
           municipioId: municipioObjectId,
-          estado: 'ENTREGADO',
+          _id: { $in: beneficiarioIdsConApoyo },
+          localidad: { $exists: true, $ne: null, $gt: '' },
         },
       },
       {
         $group: {
-          _id: {
-            localidad: '$localidad',
-            ciudadanoId: '$ciudadanoId',
-          },
-        },
-      },
-      {
-        $group: {
-          _id: '$_id.localidad',
+          _id: '$localidad',
           total: { $count: {} },
         },
       },
@@ -468,12 +449,10 @@ export class DashboardService {
           total: 1,
         },
       },
-      {
-        $sort: { total: -1 },
-      },
+      { $sort: { total: -1 } },
     ]);
 
-    return beneficiarios;
+    return result;
   }
 
   async getApoyosPorTipo(municipioId: string) {
@@ -519,14 +498,13 @@ export class DashboardService {
       {
         $match: {
           municipioId: municipioObjectId,
-          estado: 'ENTREGADO',
-          fechaEntrega: { $gte: fechaInicio },
+          fecha: { $gte: fechaInicio },
         },
       },
       {
         $group: {
           _id: {
-            $dateToString: { format: '%Y-%m', date: '$fechaEntrega' },
+            $dateToString: { format: '%Y-%m', date: '$fecha' },
           },
           apoyos: { $count: {} },
         },
@@ -555,31 +533,25 @@ export class DashboardService {
     mesActual.setDate(1);
     mesActual.setHours(0, 0, 0, 0);
 
+    // Alerta 1: Beneficiarios con apoyos duplicados (mismo programa) en el mismo mes
     const duplicados = await this.apoyoModel.aggregate([
       {
         $match: {
           municipioId: municipioObjectId,
-          estado: 'ENTREGADO',
-          fechaEntrega: { $gte: mesActual },
+          fecha: { $gte: mesActual },
         },
       },
       {
         $group: {
           _id: {
-            ciudadanoId: '$ciudadanoId',
-            programaDIF: '$programaDIF',
+            beneficiarioId: '$beneficiarioId',
+            programaId: '$programaId',
           },
           count: { $count: {} },
         },
       },
-      {
-        $match: {
-          count: { $gt: 1 },
-        },
-      },
-      {
-        $count: 'total',
-      },
+      { $match: { count: { $gt: 1 } } },
+      { $count: 'total' },
     ]);
 
     if (duplicados.length > 0 && duplicados[0].total > 0) {
@@ -590,21 +562,38 @@ export class DashboardService {
     }
 
     // Alerta 2: Localidades sin apoyos en los últimos 3 meses
+    // localidad está en dif_beneficiarios, no en dif_apoyos
     const hace3Meses = new Date();
     hace3Meses.setMonth(hace3Meses.getMonth() - 3);
 
-    const todasLocalidades = await this.apoyoModel.distinct('localidad', {
-      municipioId: municipioObjectId,
-    });
+    const todosLosBeneficiarioIds = await this.apoyoModel.distinct(
+      'beneficiarioId',
+      { municipioId: municipioObjectId },
+    );
 
-    const localidadesRecientes = await this.apoyoModel.distinct('localidad', {
-      municipioId: municipioObjectId,
-      estado: 'ENTREGADO',
-      fechaEntrega: { $gte: hace3Meses },
-    });
+    const beneficiarioIdsRecientes = await this.apoyoModel.distinct(
+      'beneficiarioId',
+      { municipioId: municipioObjectId, fecha: { $gte: hace3Meses } },
+    );
+
+    const todasLocalidades = await this.beneficiarioModel.distinct(
+      'localidad',
+      {
+        _id: { $in: todosLosBeneficiarioIds },
+        localidad: { $exists: true, $ne: null },
+      },
+    );
+
+    const localidadesRecientes = await this.beneficiarioModel.distinct(
+      'localidad',
+      {
+        _id: { $in: beneficiarioIdsRecientes },
+        localidad: { $exists: true, $ne: null },
+      },
+    );
 
     const localidadesRezagadas = todasLocalidades.filter(
-      (loc) => !localidadesRecientes.includes(loc),
+      (loc) => loc && !localidadesRecientes.includes(loc),
     );
 
     if (localidadesRezagadas.length > 0) {
