@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { MongooseModule } from '@nestjs/mongoose';
 import { WinstonModule } from 'nest-winston';
+import { ScheduleModule } from '@nestjs/schedule';
 import { APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
@@ -54,6 +55,9 @@ import { DifReportesModule } from './modules/dif/reportes/dif-reportes.module';
       }),
       inject: [ConfigService],
     }),
+
+    // Scheduler (cron jobs)
+    ScheduleModule.forRoot(),
 
     // Feature modules
     HealthModule,

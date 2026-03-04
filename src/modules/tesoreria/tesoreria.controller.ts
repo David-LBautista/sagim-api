@@ -16,16 +16,24 @@ import {
   CreateServicioCobroDto,
   CreateOrdenPagoTesoreriaDto,
   UpsertServicioOverrideDto,
+  RegistrarPagoCajaDto,
 } from './dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '@/common/guards';
-import { Roles, MunicipalityId, TenantScope } from '@/common/decorators';
+import {
+  Roles,
+  MunicipalityId,
+  TenantScope,
+  CurrentUser,
+} from '@/common/decorators';
 import { UserRole } from '@/shared/enums';
+import { fecha } from '@/common/helpers/fecha.helper';
 import {
   ApiTags,
   ApiBearerAuth,
   ApiOperation,
   ApiQuery,
+  ApiParam,
 } from '@nestjs/swagger';
 
 @ApiTags('Tesorería')
@@ -47,16 +55,95 @@ export class TesoreriaController {
     return this.tesoreriaService.createServicio(createServicioDto, municipioId);
   }
 
+  @Get('servicios/catalogo')
+  @Roles(UserRole.SUPER_ADMIN, UserRole.ADMIN_MUNICIPIO, UserRole.OPERATIVO)
+  @ApiOperation({
+    summary:
+      'Catálogo global de servicios cobrables (sin overrides municipales)',
+  })
+  @ApiQuery({
+    name: 'categoria',
+    required: false,
+    description:
+      'Filtra por categoría (ej. "Registro Civil", "Predial", "Licencias")',
+  })
+  getCatalogoGlobal(@Query('categoria') categoria?: string) {
+    return this.tesoreriaService.findCatalogoGlobal(categoria);
+  }
+
   @Get('servicios')
   @Roles(UserRole.SUPER_ADMIN, UserRole.ADMIN_MUNICIPIO, UserRole.OPERATIVO)
   @ApiOperation({
     summary:
       'Listar servicios cobrables activos (global + overrides del municipio)',
   })
-  findAllServicios(@MunicipalityId() municipioId: string) {
+  @ApiQuery({
+    name: 'busqueda',
+    required: false,
+    description: 'Filtra por nombre o clave',
+  })
+  @ApiQuery({
+    name: 'categoria',
+    required: false,
+    description: 'Filtra por categoría',
+  })
+  @ApiQuery({
+    name: 'soloPersonalizados',
+    required: false,
+    type: Boolean,
+    description:
+      'true = devuelve solo los servicios con override del municipio',
+  })
+  findAllServicios(
+    @MunicipalityId() municipioId: string,
+    @Query('busqueda') busqueda?: string,
+    @Query('categoria') categoria?: string,
+    @Query('soloPersonalizados') soloPersonalizados?: string,
+  ) {
     return this.tesoreriaService.findServiciosByMunicipio(
       municipioId.toString(),
+      {
+        busqueda,
+        categoria,
+        soloPersonalizados: soloPersonalizados === 'true',
+      },
     );
+  }
+
+  @Get('servicios/has-overrides')
+  @Roles(UserRole.SUPER_ADMIN, UserRole.ADMIN_MUNICIPIO, UserRole.OPERATIVO)
+  @ApiOperation({
+    summary:
+      'Verifica si el municipio tiene overrides activos (para mostrar botón "Restablecer todo")',
+  })
+  hasOverrides(@MunicipalityId() municipioId: string) {
+    return this.tesoreriaService.hasOverrides(municipioId.toString());
+  }
+
+  @Delete('servicios/overrides')
+  @Roles(UserRole.SUPER_ADMIN, UserRole.ADMIN_MUNICIPIO)
+  @ApiOperation({
+    summary: 'Restablecer todos los overrides del municipio al catálogo global',
+  })
+  deleteAllOverrides(@MunicipalityId() municipioId: string) {
+    return this.tesoreriaService.deleteAllOverrides(municipioId.toString());
+  }
+
+  @Delete('servicios/:clave/override')
+  @Roles(UserRole.SUPER_ADMIN, UserRole.ADMIN_MUNICIPIO)
+  @ApiOperation({
+    summary:
+      'Restablecer un servicio al valor del catálogo global (elimina su override)',
+  })
+  @ApiParam({
+    name: 'clave',
+    description: 'Clave del servicio, ej. ACTA_NACIMIENTO',
+  })
+  deleteOverride(
+    @Param('clave') clave: string,
+    @MunicipalityId() municipioId: string,
+  ) {
+    return this.tesoreriaService.deleteOverride(municipioId.toString(), clave);
   }
 
   @Patch('servicios/:clave/override')
@@ -130,20 +217,37 @@ export class TesoreriaController {
   @ApiQuery({ name: 'servicioId', required: false })
   @ApiQuery({ name: 'fechaDesde', required: false })
   @ApiQuery({ name: 'fechaHasta', required: false })
+  @ApiQuery({
+    name: 'busqueda',
+    required: false,
+    description: 'Buscar por descripción',
+  })
   findAllOrdenes(
     @TenantScope() scope: any,
     @Query('estado') estado?: string,
     @Query('servicioId') servicioId?: string,
     @Query('fechaDesde') fechaDesde?: string,
     @Query('fechaHasta') fechaHasta?: string,
+    @Query('busqueda') busqueda?: string,
   ) {
     const filters: any = {};
     if (estado) filters.estado = estado;
     if (servicioId) filters.servicioId = servicioId;
     if (fechaDesde) filters.fechaDesde = new Date(fechaDesde);
     if (fechaHasta) filters.fechaHasta = new Date(fechaHasta);
+    if (busqueda) filters.busqueda = busqueda;
 
     return this.tesoreriaService.findAllOrdenes(scope, filters);
+  }
+
+  @Get('ordenes-pago/metrics')
+  @Roles(UserRole.SUPER_ADMIN, UserRole.ADMIN_MUNICIPIO, UserRole.OPERATIVO)
+  @ApiOperation({
+    summary:
+      'Métricas de órdenes de pago (pendientes, recaudado, expiración, conversión)',
+  })
+  getOrdenesMetrics(@TenantScope() scope: any) {
+    return this.tesoreriaService.getOrdenesMetrics(scope);
   }
 
   @Get('ordenes-pago/:id')
@@ -182,6 +286,34 @@ export class TesoreriaController {
     return this.tesoreriaService.reenviarLink(id, municipioId);
   }
 
+  // ==================== PAGOS PRESENCIALES EN CAJA ====================
+
+  @Post('pagos/caja')
+  @Roles(UserRole.ADMIN_MUNICIPIO, UserRole.OPERATIVO)
+  @ApiOperation({ summary: 'Registrar pago presencial en caja (ventanilla)' })
+  registrarPagoCaja(
+    @Body() dto: RegistrarPagoCajaDto,
+    @MunicipalityId() municipioId: string,
+    @CurrentUser() user: any,
+  ) {
+    return this.tesoreriaService.registrarPagoCaja(
+      dto,
+      municipioId,
+      user._id.toString(),
+      user.nombre,
+    );
+  }
+
+  @Get('pagos/caja/:id/recibo')
+  @Roles(UserRole.SUPER_ADMIN, UserRole.ADMIN_MUNICIPIO, UserRole.OPERATIVO)
+  @ApiOperation({
+    summary:
+      'Obtener URL firmada del recibo PDF (válida 5 min) — usar para reimprimir',
+  })
+  getReciboUrl(@Param('id') id: string, @MunicipalityId() municipioId: string) {
+    return this.tesoreriaService.getReciboUrl(id, municipioId.toString());
+  }
+
   // ==================== PAGOS (CONSULTA) ====================
 
   @Get('pagos')
@@ -213,6 +345,24 @@ export class TesoreriaController {
 
   // ==================== REPORTES ====================
 
+  @Get('reportes/diario/pdf')
+  @Roles(UserRole.SUPER_ADMIN, UserRole.ADMIN_MUNICIPIO, UserRole.OPERATIVO)
+  @ApiOperation({
+    summary: 'Generar PDF de corte de caja diario y obtener URL firmada de S3',
+  })
+  @ApiQuery({
+    name: 'fecha',
+    required: false,
+    description: 'Fecha YYYY-MM-DD (default: hoy)',
+  })
+  generarCorteDiarioPdf(
+    @TenantScope() scope: any,
+    @Query('fecha') fechaStr?: string,
+  ) {
+    const fechaBusqueda = fechaStr ? fecha.parsearFecha(fechaStr) : new Date();
+    return this.tesoreriaService.generarCorteDiarioPdf(scope, fechaBusqueda);
+  }
+
   @Get('reportes/diario')
   @Roles(UserRole.SUPER_ADMIN, UserRole.ADMIN_MUNICIPIO, UserRole.OPERATIVO)
   @ApiOperation({ summary: 'Reporte de ingresos del día' })
@@ -221,9 +371,24 @@ export class TesoreriaController {
     required: false,
     description: 'Fecha en formato YYYY-MM-DD',
   })
-  reporteDiario(@TenantScope() scope: any, @Query('fecha') fecha?: string) {
-    const fechaBusqueda = fecha ? new Date(fecha) : new Date();
-    return this.tesoreriaService.reporteDiario(scope, fechaBusqueda);
+  @ApiQuery({
+    name: 'detalle',
+    required: false,
+    type: Boolean,
+    description:
+      'true = incluye array de pagos individuales (corte de caja / PDF)',
+  })
+  reporteDiario(
+    @TenantScope() scope: any,
+    @Query('fecha') fechaStr?: string,
+    @Query('detalle') detalle?: string,
+  ) {
+    const fechaBusqueda = fechaStr ? fecha.parsearFecha(fechaStr) : new Date();
+    return this.tesoreriaService.reporteDiario(
+      scope,
+      fechaBusqueda,
+      detalle === 'true',
+    );
   }
 
   @Get('reportes/mensual')

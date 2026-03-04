@@ -7,7 +7,8 @@ import {
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types, Connection } from 'mongoose';
 import { InjectConnection } from '@nestjs/mongoose';
-import { startOfDay, endOfDay, parseISO } from 'date-fns';
+import { fecha } from '@/common/helpers/fecha.helper';
+
 import {
   Beneficiario,
   BeneficiarioDocument,
@@ -215,12 +216,9 @@ export class DifService {
     if (filters.fechaInicio || filters.fechaFin) {
       query.fechaRegistro = {};
       if (filters.fechaInicio)
-        query.fechaRegistro.$gte = new Date(filters.fechaInicio);
-      if (filters.fechaFin) {
-        const fin = new Date(filters.fechaFin);
-        fin.setHours(23, 59, 59, 999);
-        query.fechaRegistro.$lte = fin;
-      }
+        query.fechaRegistro.$gte = fecha.inicioDia(filters.fechaInicio);
+      if (filters.fechaFin)
+        query.fechaRegistro.$lte = fecha.finDia(filters.fechaFin);
     }
 
     // Rango de edad (calculado desde fechaNacimiento)
@@ -581,7 +579,7 @@ export class DifService {
         })),
         observaciones: createApoyoDto.observaciones,
         entregadoPor: new Types.ObjectId(userId),
-        fecha: startOfDay(parseISO(createApoyoDto.fecha)),
+        fecha: fecha.parsearFecha(createApoyoDto.fecha),
         folio: folioApoyo,
       });
 
@@ -626,7 +624,7 @@ export class DifService {
           stockNuevo,
           concepto: `Entrega de apoyo (${apoyo.folio})`,
           responsable: new Types.ObjectId(userId),
-          fecha: startOfDay(parseISO(createApoyoDto.fecha)),
+          fecha: fecha.parsearFecha(createApoyoDto.fecha),
           apoyoId: apoyo._id,
           folio, // ✅ Folio generado explícitamente
         });
@@ -703,7 +701,7 @@ export class DifService {
       beneficiarioId: new Types.ObjectId(createApoyoDto.beneficiarioId),
       programaId: new Types.ObjectId(createApoyoDto.programaId),
       entregadoPor: new Types.ObjectId(userId),
-      fecha: startOfDay(parseISO(createApoyoDto.fecha)),
+      fecha: fecha.parsearFecha(createApoyoDto.fecha),
       folio: await this.generateFolioApoyo(municipioOId.toString()),
     });
 
@@ -744,7 +742,7 @@ export class DifService {
       stockNuevo,
       concepto: `Entrega de apoyo a beneficiario`,
       responsable: new Types.ObjectId(userId),
-      fecha: startOfDay(parseISO(createApoyoDto.fecha)),
+      fecha: fecha.parsearFecha(createApoyoDto.fecha),
       apoyoId: apoyo._id,
       folio, // ✅ Folio generado explícitamente
     });
@@ -798,12 +796,8 @@ export class DifService {
 
     if (from || to) {
       query.fecha = {};
-      if (from) {
-        query.fecha.$gte = startOfDay(parseISO(from));
-      }
-      if (to) {
-        query.fecha.$lte = endOfDay(parseISO(to));
-      }
+      if (from) query.fecha.$gte = fecha.inicioDia(from);
+      if (to) query.fecha.$lte = fecha.finDia(to);
     }
 
     return this.apoyoModel

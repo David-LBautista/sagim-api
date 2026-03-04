@@ -50,6 +50,9 @@ export const CiudadanoSchema = SchemaFactory.createForClass(Ciudadano);
 
 // Indexes
 CiudadanoSchema.index({ curp: 1, municipioId: 1 }, { unique: true });
+CiudadanoSchema.index({ municipioId: 1, curp: 1 });
+CiudadanoSchema.index({ municipioId: 1, nombre: 1 });
+CiudadanoSchema.index({ municipioId: 1, apellidoPaterno: 1 });
 CiudadanoSchema.index({ municipioId: 1 });
 CiudadanoSchema.index({ email: 1 });
 CiudadanoSchema.index({ telefono: 1 });

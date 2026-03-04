@@ -5,6 +5,9 @@ import {
   IsEmail,
   IsObject,
   IsBoolean,
+  IsNumber,
+  Min,
+  Max,
   MinLength,
   ValidateNested,
 } from 'class-validator';
@@ -105,6 +108,20 @@ export class UpdateMunicipalityDto {
   @IsString()
   @IsOptional()
   adminTelefono?: string;
+
+  // ==================== CONFIGURACIÓN FISCAL ====================
+
+  @ApiProperty({
+    example: 10,
+    required: false,
+    description:
+      'Porcentaje de contribución incluido en el precio de los servicios (0–100). Usado para desglosar el recibo de caja.',
+  })
+  @IsNumber()
+  @Min(0)
+  @Max(100)
+  @IsOptional()
+  porcentajeContribucion?: number;
 
   // ==================== MÓDULOS ====================
 

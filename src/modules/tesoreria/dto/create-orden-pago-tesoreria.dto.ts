@@ -5,6 +5,7 @@ import {
   IsOptional,
   IsEmail,
   Min,
+  Max,
 } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 
@@ -16,6 +17,15 @@ export class CreateOrdenPagoTesoreriaDto {
   @IsString()
   @IsNotEmpty()
   servicioId: string;
+
+  @ApiProperty({
+    description:
+      'ID del ciudadano (opcional — vincula el pago y obtiene nombre/email)',
+    required: false,
+  })
+  @IsOptional()
+  @IsString()
+  ciudadanoId?: string;
 
   @ApiProperty({
     description: 'Monto a cobrar (puede ajustarse del costo base)',
@@ -34,12 +44,14 @@ export class CreateOrdenPagoTesoreriaDto {
   concepto: string;
 
   @ApiProperty({
-    description: 'Email del ciudadano para enviar link',
+    description:
+      'Email del ciudadano para enviar link (opcional si se provee ciudadanoId con email)',
     example: 'usuario@gmail.com',
+    required: false,
   })
+  @IsOptional()
   @IsEmail()
-  @IsNotEmpty()
-  emailCiudadano: string;
+  emailCiudadano?: string;
 
   @ApiProperty({
     description: 'Horas de validez del link (default 48)',
@@ -49,5 +61,6 @@ export class CreateOrdenPagoTesoreriaDto {
   @IsOptional()
   @IsNumber()
   @Min(1)
+  @Max(72)
   horasValidez?: number;
 }

@@ -6,7 +6,7 @@ export type MunicipalityDocument = Municipality & Document;
 
 @Schema({ collection: 'catalogos_municipios', timestamps: true })
 export class Municipality {
-  @Prop({ required: true, unique: true })
+  @Prop({ required: true })
   nombre: string;
 
   @Prop({ type: Types.ObjectId, ref: 'Estado', required: true })
@@ -26,6 +26,11 @@ export class Municipality {
 
   @Prop()
   logoUrl?: string;
+
+  /** Porcentaje de contribución incluido en el precio del servicio (default 10%).
+   *  El cajero lo usa para desglosar subtotal + contribución en el recibo. */
+  @Prop({ type: Number, default: 10, min: 0, max: 100 })
+  porcentajeContribucion: number;
 
   @Prop()
   contactoEmail?: string;

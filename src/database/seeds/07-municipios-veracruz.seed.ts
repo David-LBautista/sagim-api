@@ -356,7 +356,7 @@ export async function seedMunicipiosVeracruz(appContext?: any) {
 
     for (const municipio of municipiosData) {
       const result = await municipalityModel.updateOne(
-        { claveInegi: municipio.claveInegi },
+        { estadoId: veracruz._id, nombre: municipio.nombre },
         {
           $setOnInsert: {
             config: configBase,

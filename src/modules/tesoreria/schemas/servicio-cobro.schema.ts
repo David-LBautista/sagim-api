@@ -22,6 +22,10 @@ export class ServicioCobro {
   @Prop({ required: true })
   categoria: string; // "Registro Civil", "Predial", etc.
 
+  /** Departamento municipal responsable del trámite — ej. "Registro Civil", "Tesorería", "Obras Públicas" */
+  @Prop()
+  areaResponsable?: string;
+
   @Prop({ required: true, default: 0 })
   costo: number; // monto base en pesos
 

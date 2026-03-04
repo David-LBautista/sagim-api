@@ -1,9 +1,9 @@
 import { Injectable, BadRequestException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
+import { fecha } from '@/common/helpers/fecha.helper';
 import { TDocumentDefinitions } from 'pdfmake/interfaces';
-import * as https from 'https';
-import * as http from 'http';
+import { PdfService } from '@/modules/shared/pdf/pdf.service';
 
 import { Apoyo, ApoyoDocument } from '@/modules/dif/schemas/apoyo.schema';
 import {
@@ -49,21 +49,6 @@ import {
   FondoReporteItem,
 } from './builders/fondos-reporte.builder';
 
-// eslint-disable-next-line @typescript-eslint/no-require-imports
-import PdfMake = require('pdfmake/build/pdfmake');
-// eslint-disable-next-line @typescript-eslint/no-require-imports
-import PdfFonts = require('pdfmake/build/vfs_fonts');
-// In pdfmake 0.3.x, vfs_fonts exports the font map directly at the top level
-(PdfMake as any).vfs = (PdfFonts as any).vfs ?? (PdfFonts as any);
-(PdfMake as any).fonts = {
-  Roboto: {
-    normal: 'Roboto-Regular.ttf',
-    bold: 'Roboto-Medium.ttf',
-    italics: 'Roboto-Italic.ttf',
-    bolditalics: 'Roboto-MediumItalic.ttf',
-  },
-};
-
 @Injectable()
 export class DifReportesService {
   constructor(
@@ -76,7 +61,7 @@ export class DifReportesService {
     private movimientoModel: Model<MovimientoInventarioDocument>,
     @InjectModel(Municipality.name)
     private municipalityModel: Model<MunicipalityDocument>,
-    private readonly s3Service: S3Service,
+    private readonly pdfService: PdfService,
   ) {}
 
   // ── Punto de entrada principal ──────────────────────────────────────
@@ -94,9 +79,9 @@ export class DifReportesService {
       .lean();
     const municipioNombreReal = (municipio as any)?.nombre || municipioNombre;
     const logoBase64 = (municipio as any)?.logoUrl
-      ? await this.fetchImageAsBase64((municipio as any).logoUrl).catch(
-          () => undefined,
-        )
+      ? await this.pdfService
+          .fetchImageAsBase64((municipio as any).logoUrl)
+          .catch(() => undefined)
       : undefined;
 
     // 1. Obtener datos + construir contenido según tipo
@@ -187,21 +172,22 @@ export class DifReportesService {
     };
 
     // 3. Generar buffer PDF
-    const pdfBuffer = await this.generatePdfBuffer(docDefinition);
+    const pdfBuffer = await this.pdfService.generatePdfBuffer(docDefinition);
 
-    // 4. Subir a S3
-    const timestamp = Date.now();
-    const key = `${municipioId}/reportes/dif-${tipo}-${timestamp}.pdf`;
+    // 4. Subir a S3: municipios/{municipioId}/reportes/dif/{tipo}/RPT-{tipo}-{YYYYMM}-{ts}.pdf
+    const periodo = filtros.fechaInicio
+      ? filtros.fechaInicio.substring(0, 7).replace('-', '')
+      : new Date().toISOString().substring(0, 7).replace('-', '');
+    const key = S3Service.keyReporteDif(municipioId, tipo, periodo);
 
-    await this.s3Service.uploadPDF(key, pdfBuffer, {
-      municipioId,
-      tipo,
-      generadoEn: new Date().toISOString(),
-    });
-
-    // 5. Generar URL firmada
-    const expiresIn = filtros.expiresIn || 300; // 5 minutos por defecto
-    const url = await this.s3Service.getSignedUrl(key, expiresIn);
+    // 5. Subir a S3 y generar URL firmada
+    const expiresIn = filtros.expiresIn || 300;
+    const { url } = await this.pdfService.uploadAndSign(
+      key,
+      pdfBuffer,
+      { municipioId, tipo, generadoEn: new Date().toISOString() },
+      expiresIn,
+    );
 
     return { url, key, expiraEn: expiresIn };
   }
@@ -216,8 +202,8 @@ export class DifReportesService {
     const matchBase: any = {
       municipioId: municipioOId,
       fecha: {
-        $gte: new Date(filtros.fechaInicio),
-        $lte: new Date(filtros.fechaFin + 'T23:59:59'),
+        $gte: fecha.inicioDia(filtros.fechaInicio),
+        $lte: fecha.finDia(filtros.fechaFin),
       },
     };
     if (filtros.programaId)
@@ -330,8 +316,8 @@ export class DifReportesService {
         $match: {
           municipioId: municipioOId,
           fecha: {
-            $gte: new Date(filtros.fechaInicio),
-            $lte: new Date(filtros.fechaFin + 'T23:59:59'),
+            $gte: fecha.inicioDia(filtros.fechaInicio),
+            $lte: fecha.finDia(filtros.fechaFin),
           },
         },
       },
@@ -450,8 +436,8 @@ export class DifReportesService {
         $match: {
           municipioId: municipioOId,
           fecha: {
-            $gte: new Date(filtros.fechaInicio),
-            $lte: new Date(filtros.fechaFin + 'T23:59:59'),
+            $gte: fecha.inicioDia(filtros.fechaInicio),
+            $lte: fecha.finDia(filtros.fechaFin),
           },
           inventarioId: { $in: inventariosRaw.map((i: any) => i._id) },
         },
@@ -542,8 +528,8 @@ export class DifReportesService {
         $match: {
           municipioId: municipioOId,
           fecha: {
-            $gte: new Date(filtros.fechaInicio),
-            $lte: new Date(filtros.fechaFin + 'T23:59:59'),
+            $gte: fecha.inicioDia(filtros.fechaInicio),
+            $lte: fecha.finDia(filtros.fechaFin),
           },
           inventarioId: { $in: fondosRaw.map((f: any) => f._id) },
         },
@@ -614,40 +600,5 @@ export class DifReportesService {
     });
 
     return { content, tituloReporte: 'Reporte de Fondos Monetarios DIF' };
-  }
-
-  // ── Generación del buffer PDF ───────────────────────────────────────
-
-  private async generatePdfBuffer(
-    docDefinition: TDocumentDefinitions,
-  ): Promise<Buffer> {
-    const doc = PdfMake.createPdf(docDefinition as any);
-    // pdfmake 0.3.x: getBuffer() returns a Promise directly (no callback)
-    const buffer = await (doc as any).getBuffer();
-    return Buffer.from(buffer);
-  }
-
-  // ── Helpers ────────────────────────────────────────────────────────
-
-  private fetchImageAsBase64(url: string): Promise<string> {
-    return new Promise((resolve, reject) => {
-      const client = url.startsWith('https') ? https : http;
-      client
-        .get(url, (res) => {
-          if (res.statusCode !== 200) {
-            reject(new Error(`HTTP ${res.statusCode} fetching logo`));
-            return;
-          }
-          const contentType = res.headers['content-type'] || 'image/png';
-          const chunks: Buffer[] = [];
-          res.on('data', (chunk: Buffer) => chunks.push(chunk));
-          res.on('end', () => {
-            const b64 = Buffer.concat(chunks).toString('base64');
-            resolve(`data:${contentType};base64,${b64}`);
-          });
-          res.on('error', reject);
-        })
-        .on('error', reject);
-    });
   }
 }

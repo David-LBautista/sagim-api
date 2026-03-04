@@ -19,7 +19,7 @@ export class OrdenPago {
   @Prop({ type: Types.ObjectId, ref: 'Municipality', required: true })
   municipioId: Types.ObjectId;
 
-  @Prop({ type: Types.ObjectId, ref: 'ServicioMunicipal' })
+  @Prop({ type: Types.ObjectId, ref: 'ServicioCobro' })
   servicioId?: Types.ObjectId; // Servicio municipal (acta, licencia, etc.)
 
   @Prop({ type: Types.ObjectId, ref: 'Predio' })
@@ -78,7 +78,9 @@ export const OrdenPagoSchema = SchemaFactory.createForClass(OrdenPago);
 OrdenPagoSchema.index({ municipioId: 1, estado: 1 });
 OrdenPagoSchema.index({ servicioId: 1 });
 OrdenPagoSchema.index({ predioId: 1, createdAt: -1 });
-OrdenPagoSchema.index({ expiresAt: 1 }, { expireAfterSeconds: 0 }); // TTL index para auto-expirar
+// NOTA: NO usar TTL index aquí — borraría el documento en lugar de marcarlo EXPIRADA.
+// La expiración se evalúa lazy en getOrdenPorToken y pagarOrden.
+// Para limpieza periódica usar un cron job que actualice estado → EXPIRADA.
 
 // Compound index (ESR)
 // Alerta ORDENES_POR_EXPIRAR: municipioId + estado (equality) + expiresAt (range)

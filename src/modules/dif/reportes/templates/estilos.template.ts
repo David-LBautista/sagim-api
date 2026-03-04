@@ -45,9 +45,8 @@ export const estilosDIF: StyleDictionary = {
   tableHeader: {
     fontSize: 9,
     bold: true,
-    color: '#ffffff',
-    fillColor: '#0F2A44',
-    alignment: 'center',
+    color: '#212121',
+    alignment: 'left',
     margin: [4, 4, 4, 4],
   },
   tableHeaderLight: {
@@ -55,7 +54,7 @@ export const estilosDIF: StyleDictionary = {
     bold: true,
     color: '#212121',
     fillColor: '#e8eaf6',
-    alignment: 'center',
+    alignment: 'left',
     margin: [4, 3, 4, 3],
   },
   tableCell: {

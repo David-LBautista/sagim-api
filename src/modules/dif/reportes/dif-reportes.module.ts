@@ -19,7 +19,7 @@ import {
   Municipality,
   MunicipalitySchema,
 } from '@/modules/municipalities/schemas/municipality.schema';
-import { S3Module } from '@/modules/s3/s3.module';
+import { PdfModule } from '@/modules/shared/pdf/pdf.module';
 
 @Module({
   imports: [
@@ -30,7 +30,7 @@ import { S3Module } from '@/modules/s3/s3.module';
       { name: MovimientoInventario.name, schema: MovimientoInventarioSchema },
       { name: Municipality.name, schema: MunicipalitySchema },
     ]),
-    S3Module,
+    PdfModule,
   ],
   controllers: [DifReportesController],
   providers: [DifReportesService],

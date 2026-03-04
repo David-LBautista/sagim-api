@@ -139,6 +139,16 @@ export class PagosController {
   }
 
   @Public()
+  @Post('pagos/orden/:token/crear-intent')
+  @ApiOperation({
+    summary:
+      '🌐 PÚBLICO - Crear PaymentIntent en Stripe para una orden (devuelve clientSecret)',
+  })
+  crearPaymentIntent(@Param('token') token: string) {
+    return this.pagosService.crearPaymentIntent(token);
+  }
+
+  @Public()
   @Post('pagos/orden/:token/pagar')
   @ApiOperation({ summary: '🌐 PÚBLICO - Ciudadano paga con Stripe' })
   pagarOrden(

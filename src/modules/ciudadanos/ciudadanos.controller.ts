@@ -38,15 +38,30 @@ export class CiudadanosController {
   }
 
   @Get()
-  @ApiOperation({ summary: 'Buscar ciudadano por CURP' })
+  @ApiOperation({
+    summary: 'Buscar ciudadano por CURP exacto o por nombre parcial',
+  })
   @ApiQuery({
     name: 'curp',
-    required: true,
-    description: 'CURP del ciudadano (18 caracteres)',
+    required: false,
+    description: 'CURP exacto del ciudadano (18 caracteres)',
   })
-  @ApiResponse({ status: 200, description: 'Ciudadano encontrado' })
+  @ApiQuery({
+    name: 'busqueda',
+    required: false,
+    description:
+      'Búsqueda parcial por nombre, apellido o CURP (mín. 2 caracteres)',
+  })
+  @ApiResponse({ status: 200, description: 'Ciudadano(s) encontrado(s)' })
   @ApiResponse({ status: 404, description: 'Ciudadano no encontrado' })
-  async findByCurp(@Query('curp') curp: string, @TenantScope() scope: any) {
+  async findByCurp(
+    @Query('curp') curp: string,
+    @Query('busqueda') busqueda: string,
+    @TenantScope() scope: any,
+  ) {
+    if (busqueda) {
+      return this.ciudadanosService.buscar(busqueda, scope);
+    }
     return this.ciudadanosService.findByCurp(curp, scope);
   }
 

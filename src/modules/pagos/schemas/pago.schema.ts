@@ -31,6 +31,16 @@ export class Pago {
   @Prop({ type: Number, required: true })
   montoCobrado: number; // Lo que pagó el ciudadano (= montoEnLinea)
 
+  // ==================== DESGLOSE FISCAL (CONTRIBUCIÓN) ====================
+  @Prop({ type: Number })
+  subtotal?: number; // montoCobrado / (1 + porcentajeContribucion/100)
+
+  @Prop({ type: Number })
+  contribucion?: number; // montoCobrado - subtotal
+
+  @Prop({ type: Number })
+  porcentajeContribucion?: number; // snapshot del % configurado en el municipio
+
   @Prop({ type: Number })
   stripeFee?: number; // Fee que cobra Stripe (ej: $16.20)
 
@@ -51,8 +61,8 @@ export class Pago {
   @Prop({ type: String, enum: PaymentStatus, default: PaymentStatus.PENDIENTE })
   estado: PaymentStatus;
 
-  @Prop({ required: true })
-  stripePaymentIntentId: string;
+  @Prop()
+  stripePaymentIntentId?: string; // Opcional para pagos presenciales en caja
 
   @Prop()
   stripeChargeId?: string;
@@ -65,6 +75,28 @@ export class Pago {
 
   @Prop()
   metodoPago?: string;
+
+  // ==================== CANAL DE PAGO ====================
+  @Prop({
+    type: String,
+    enum: ['CAJA', 'EN_LINEA'],
+    default: 'EN_LINEA',
+    index: true,
+  })
+  canal?: string; // 'CAJA' = ventanilla presencial | 'EN_LINEA' = Stripe
+
+  @Prop({ type: Types.ObjectId, ref: 'User' })
+  cajeroId?: Types.ObjectId; // Usuario cajero que registró el pago en ventanilla
+
+  // ==================== REFERENCIA A SERVICIO ====================
+  @Prop({ type: Types.ObjectId, ref: 'ServicioCobro' })
+  servicioId?: Types.ObjectId;
+
+  @Prop()
+  servicioNombre?: string;
+
+  @Prop()
+  servicioCategoria?: string;
 
   @Prop()
   descripcion?: string;
@@ -115,6 +147,10 @@ PagoSchema.index({ fechaPago: -1 });
 // Compound indexes (ESR: Equality → Sort → Range)
 // Dashboard tesorería: resumen, ingresos, comparativo mensual, ingresos por área
 PagoSchema.index({ municipioId: 1, estado: 1, fechaPago: -1 });
+// Canal + fecha: corte de caja / comparativo ventanilla vs en línea
+PagoSchema.index({ municipioId: 1, canal: 1, fechaPago: -1 });
+// Cajero: historial por cajero
+PagoSchema.index({ cajeroId: 1, createdAt: -1 });
 
 // Pre-save hook to generate folio
 PagoSchema.pre('save', async function (next) {

@@ -3,7 +3,9 @@ import {
   IsNotEmpty,
   IsNumber,
   IsOptional,
+  IsEmail,
   Min,
+  Max,
 } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 
@@ -51,11 +53,22 @@ export class CreateOrdenPagoDto {
   areaResponsable?: string;
 
   @ApiProperty({
+    description:
+      'Email del ciudadano para enviar link (opcional si ciudadanoId tiene email)',
+    example: 'usuario@gmail.com',
+    required: false,
+  })
+  @IsOptional()
+  @IsEmail()
+  emailCiudadano?: string;
+
+  @ApiProperty({
     description: 'Horas de validez del token (24-72)',
     default: 48,
   })
   @IsOptional()
   @IsNumber()
   @Min(1)
+  @Max(72)
   horasValidez?: number; // Default 48 horas
 }

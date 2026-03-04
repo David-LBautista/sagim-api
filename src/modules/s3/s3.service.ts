@@ -30,29 +30,48 @@ export class S3Service {
     });
   }
 
+  // ── Helpers estáticos de keys S3 ───────────────────────────────────────────
+
+  /** Logo del municipio — se sobreescribe en cada actualización */
+  static keyLogo(municipioId: string): string {
+    return `municipios/${municipioId}/logo/logo.png`;
+  }
+
+  /** Recibo de cobro en caja — el folio ya es único por municipio y mes */
+  static keyReciboCaja(municipioId: string, folio: string): string {
+    return `municipios/${municipioId}/recibos/caja/${folio}.pdf`;
+  }
+
+  /** Recibo de orden de pago en línea (Stripe) */
+  static keyReciboOrden(municipioId: string, folio: string): string {
+    return `municipios/${municipioId}/ordenes-pago/recibos/${folio}.pdf`;
+  }
+
   /**
-   * Generar S3 key siguiendo la estructura SAGIM
-   * municipios/{municipioClave}/{modulo}/{submodulo}/{YYYY}/{MM}/{archivo}.pdf
+   * Reporte DIF
+   * @param subtipo  'apoyos' | 'inventario' | 'beneficiarios' | 'fondos'
+   * @param periodo  'YYYYMM'
    */
-  generateKey(
-    municipioClave: string,
-    modulo: 'tesoreria' | 'dif' | 'registro-civil' | 'catastro',
-    submodulo: 'pagos' | 'apoyos' | 'tramites',
-    tipo: 'recibo' | 'comprobante' | 'constancia',
-    folio: string,
-    entidadId: string,
+  static keyReporteDif(
+    municipioId: string,
+    subtipo: string,
+    periodo: string,
   ): string {
-    const now = new Date();
-    const year = now.getUTCFullYear();
-    const month = String(now.getUTCMonth() + 1).padStart(2, '0');
-    const timestamp = now
-      .toISOString()
-      .replace(/[-:T.Z]/g, '')
-      .substring(0, 14); // YYYYMMDDHHMMSS
+    const ts = Date.now();
+    return `municipios/${municipioId}/reportes/dif/${subtipo}/RPT-${subtipo}-${periodo}-${ts}.pdf`;
+  }
 
-    const fileName = `${tipo}-${folio}-${entidadId}-${timestamp}.pdf`;
-
-    return `municipios/${municipioClave}/${modulo}/${submodulo}/${year}/${month}/${fileName}`;
+  /**
+   * Reporte Tesorería
+   * @param subtipo  'diario' | 'mensual' | 'servicios'
+   * @param periodo  'YYYYMMDD' para diario, 'YYYYMM' para mensual y servicios
+   */
+  static keyReporteTesoreria(
+    municipioId: string,
+    subtipo: string,
+    periodo: string,
+  ): string {
+    return `municipios/${municipioId}/reportes/tesoreria/${subtipo}/RPT-${subtipo}-${periodo}.pdf`;
   }
 
   /**

@@ -67,6 +67,28 @@ export class CiudadanosService {
     return ciudadano as unknown as CiudadanoDocument;
   }
 
+  async buscar(busqueda: string, scope: any): Promise<CiudadanoDocument[]> {
+    const q = busqueda.trim();
+    if (!q) return [];
+
+    const results = await this.ciudadanoModel
+      .find({
+        ...scope,
+        activo: true,
+        $or: [
+          { curp: q.toUpperCase() },
+          { nombre: { $regex: q, $options: 'i' } },
+          { apellidoPaterno: { $regex: q, $options: 'i' } },
+          { apellidoMaterno: { $regex: q, $options: 'i' } },
+        ],
+      })
+      .select('_id curp nombre apellidoPaterno apellidoMaterno telefono email')
+      .limit(15)
+      .lean();
+
+    return results as unknown as CiudadanoDocument[];
+  }
+
   async findOne(id: string, scope: any): Promise<CiudadanoDocument> {
     const ciudadano = await this.ciudadanoModel
       .findOne({ _id: id, ...scope })

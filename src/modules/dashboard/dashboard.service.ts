@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
+import { fecha } from '@/common/helpers/fecha.helper';
 import { Pago, PagoDocument } from '@/modules/pagos/schemas/pago.schema';
 import {
   OrdenPago,
@@ -35,9 +36,8 @@ export class DashboardService {
 
   async getResumenTesoreria(municipioId: string) {
     const municipioObjectId = new Types.ObjectId(municipioId);
-    const mesActual = new Date();
-    mesActual.setDate(1);
-    mesActual.setHours(0, 0, 0, 0);
+    const now = new Date();
+    const mesActual = fecha.inicioMes(now.getMonth() + 1, now.getFullYear());
 
     const [pagosStats, ordenesStats, serviciosActivos] = await Promise.all([
       this.pagoModel.aggregate([
@@ -46,6 +46,20 @@ export class DashboardService {
             municipioId: municipioObjectId,
             estado: 'PAGADO',
             fechaPago: { $gte: mesActual },
+          },
+        },
+        {
+          $unionWith: {
+            coll: 'tesoreria_pagos',
+            pipeline: [
+              {
+                $match: {
+                  municipioId: municipioObjectId,
+                  estado: 'PAGADO',
+                  fechaPago: { $gte: mesActual },
+                },
+              },
+            ],
           },
         },
         {
@@ -80,12 +94,15 @@ export class DashboardService {
   async getIngresos(municipioId: string, desde?: string, hasta?: string) {
     const municipioObjectId = new Types.ObjectId(municipioId);
 
-    // Si no se especifica rango, usar mes actual
-    const fechaDesde = desde
-      ? new Date(desde)
-      : new Date(new Date().setDate(1));
-    const fechaHasta = hasta ? new Date(hasta) : new Date();
-    fechaHasta.setHours(23, 59, 59, 999);
+    // Usar UTC para evitar desfase de zona horaria
+    let fechaDesde: Date;
+    let fechaHasta: Date;
+
+    const hoy = new Date();
+    fechaDesde = desde
+      ? fecha.inicioDia(desde)
+      : fecha.inicioMes(hoy.getMonth() + 1, hoy.getFullYear());
+    fechaHasta = hasta ? fecha.finDia(hasta) : fecha.finDia(hoy);
 
     const ingresos = await this.pagoModel.aggregate([
       {
@@ -93,6 +110,20 @@ export class DashboardService {
           municipioId: municipioObjectId,
           estado: 'PAGADO',
           fechaPago: { $gte: fechaDesde, $lte: fechaHasta },
+        },
+      },
+      {
+        $unionWith: {
+          coll: 'tesoreria_pagos',
+          pipeline: [
+            {
+              $match: {
+                municipioId: municipioObjectId,
+                estado: 'PAGADO',
+                fechaPago: { $gte: fechaDesde, $lte: fechaHasta },
+              },
+            },
+          ],
         },
       },
       {
@@ -128,9 +159,10 @@ export class DashboardService {
           estado: 'PAGADO',
         },
       },
+      // Join con la orden de pago para obtener servicioId
       {
         $lookup: {
-          from: 'ordenpagos',
+          from: 'pagos_ordenes',
           localField: 'ordenPagoId',
           foreignField: '_id',
           as: 'orden',
@@ -139,16 +171,73 @@ export class DashboardService {
       {
         $unwind: { path: '$orden', preserveNullAndEmptyArrays: true },
       },
+      // Join con el servicio para obtener areaResponsable canónica
+      {
+        $lookup: {
+          from: 'tesoreria_servicios_cobro',
+          localField: 'orden.servicioId',
+          foreignField: '_id',
+          as: 'servicio',
+        },
+      },
+      {
+        $unwind: { path: '$servicio', preserveNullAndEmptyArrays: true },
+      },
+      {
+        $project: {
+          // Prioridad: areaResponsable del catálogo → areaResponsable de la orden → SIN_AREA
+          area: {
+            $ifNull: [
+              '$servicio.areaResponsable',
+              { $ifNull: ['$orden.areaResponsable', 'SIN_AREA'] },
+            ],
+          },
+          monto: 1,
+        },
+      },
+      {
+        $unionWith: {
+          coll: 'tesoreria_pagos',
+          pipeline: [
+            {
+              $match: {
+                municipioId: municipioObjectId,
+                estado: 'PAGADO',
+              },
+            },
+            // Lookup areaResponsable desde el catálogo de servicios
+            {
+              $lookup: {
+                from: 'tesoreria_servicios_cobro',
+                localField: 'servicioId',
+                foreignField: '_id',
+                as: 'servicio',
+              },
+            },
+            {
+              $unwind: { path: '$servicio', preserveNullAndEmptyArrays: true },
+            },
+            {
+              $project: {
+                area: {
+                  $ifNull: ['$servicio.areaResponsable', 'SIN_AREA'],
+                },
+                monto: 1,
+              },
+            },
+          ],
+        },
+      },
       {
         $group: {
-          _id: '$orden.areaResponsable',
+          _id: '$area',
           monto: { $sum: '$monto' },
         },
       },
       {
         $project: {
           _id: 0,
-          area: { $ifNull: ['$_id', 'SIN_AREA'] },
+          area: '$_id',
           monto: 1,
         },
       },
@@ -172,7 +261,7 @@ export class DashboardService {
       },
       {
         $lookup: {
-          from: 'ordenpagos',
+          from: 'pagos_ordenes',
           localField: 'ordenPagoId',
           foreignField: '_id',
           as: 'orden',
@@ -183,7 +272,7 @@ export class DashboardService {
       },
       {
         $lookup: {
-          from: 'serviciocobros',
+          from: 'tesoreria_servicios_cobro',
           localField: 'orden.servicioId',
           foreignField: '_id',
           as: 'servicio',
@@ -193,15 +282,45 @@ export class DashboardService {
         $unwind: { path: '$servicio', preserveNullAndEmptyArrays: true },
       },
       {
+        $project: {
+          servicioNombre: {
+            $ifNull: [
+              '$servicioNombre',
+              { $ifNull: ['$servicio.nombre', 'SERVICIO_DESCONOCIDO'] },
+            ],
+          },
+        },
+      },
+      {
+        $unionWith: {
+          coll: 'tesoreria_pagos',
+          pipeline: [
+            {
+              $match: {
+                municipioId: municipioObjectId,
+                estado: 'PAGADO',
+              },
+            },
+            {
+              $project: {
+                servicioNombre: {
+                  $ifNull: ['$servicioNombre', 'SERVICIO_DESCONOCIDO'],
+                },
+              },
+            },
+          ],
+        },
+      },
+      {
         $group: {
-          _id: '$servicio.nombre',
+          _id: '$servicioNombre',
           total: { $count: {} },
         },
       },
       {
         $project: {
           _id: 0,
-          servicio: { $ifNull: ['$_id', 'SERVICIO_DESCONOCIDO'] },
+          servicio: '$_id',
           total: 1,
         },
       },
@@ -219,10 +338,11 @@ export class DashboardService {
   async getComparativoMensual(municipioId: string, meses: number) {
     const municipioObjectId = new Types.ObjectId(municipioId);
 
-    const fechaInicio = new Date();
-    fechaInicio.setMonth(fechaInicio.getMonth() - meses);
-    fechaInicio.setDate(1);
-    fechaInicio.setHours(0, 0, 0, 0);
+    const hoyComp = new Date();
+    const mesBase = hoyComp.getMonth() + 1 - meses;
+    const anioBase = hoyComp.getFullYear() + Math.floor((mesBase - 1) / 12);
+    const mesNorm = ((mesBase - 1 + 120) % 12) + 1;
+    const fechaInicio = fecha.inicioMes(mesNorm, anioBase);
 
     const comparativo = await this.pagoModel.aggregate([
       {
@@ -230,6 +350,20 @@ export class DashboardService {
           municipioId: municipioObjectId,
           estado: 'PAGADO',
           fechaPago: { $gte: fechaInicio },
+        },
+      },
+      {
+        $unionWith: {
+          coll: 'tesoreria_pagos',
+          pipeline: [
+            {
+              $match: {
+                municipioId: municipioObjectId,
+                estado: 'PAGADO',
+                fechaPago: { $gte: fechaInicio },
+              },
+            },
+          ],
         },
       },
       {
@@ -260,12 +394,18 @@ export class DashboardService {
     const alertas = [];
 
     // Alerta 1: Baja recaudación vs mes anterior
-    const mesActual = new Date();
-    mesActual.setDate(1);
-    mesActual.setHours(0, 0, 0, 0);
-
-    const mesAnterior = new Date(mesActual);
-    mesAnterior.setMonth(mesAnterior.getMonth() - 1);
+    const nowAlertas = new Date();
+    const mesActual = fecha.inicioMes(
+      nowAlertas.getMonth() + 1,
+      nowAlertas.getFullYear(),
+    );
+    const mesAnteriorNum =
+      nowAlertas.getMonth() === 0 ? 12 : nowAlertas.getMonth();
+    const anioAnterior =
+      nowAlertas.getMonth() === 0
+        ? nowAlertas.getFullYear() - 1
+        : nowAlertas.getFullYear();
+    const mesAnterior = fecha.inicioMes(mesAnteriorNum, anioAnterior);
 
     const [recaudacionActual, recaudacionAnterior] = await Promise.all([
       this.pagoModel.aggregate([
@@ -274,6 +414,20 @@ export class DashboardService {
             municipioId: municipioObjectId,
             estado: 'PAGADO',
             fechaPago: { $gte: mesActual },
+          },
+        },
+        {
+          $unionWith: {
+            coll: 'tesoreria_pagos',
+            pipeline: [
+              {
+                $match: {
+                  municipioId: municipioObjectId,
+                  estado: 'PAGADO',
+                  fechaPago: { $gte: mesActual },
+                },
+              },
+            ],
           },
         },
         {
@@ -289,6 +443,20 @@ export class DashboardService {
             municipioId: municipioObjectId,
             estado: 'PAGADO',
             fechaPago: { $gte: mesAnterior, $lt: mesActual },
+          },
+        },
+        {
+          $unionWith: {
+            coll: 'tesoreria_pagos',
+            pipeline: [
+              {
+                $match: {
+                  municipioId: municipioObjectId,
+                  estado: 'PAGADO',
+                  fechaPago: { $gte: mesAnterior, $lt: mesActual },
+                },
+              },
+            ],
           },
         },
         {
@@ -489,10 +657,12 @@ export class DashboardService {
   async getComparativoMensualDIF(municipioId: string, meses: number) {
     const municipioObjectId = new Types.ObjectId(municipioId);
 
-    const fechaInicio = new Date();
-    fechaInicio.setMonth(fechaInicio.getMonth() - meses);
-    fechaInicio.setDate(1);
-    fechaInicio.setHours(0, 0, 0, 0);
+    const hoyDif = new Date();
+    const mesBaseDif = hoyDif.getMonth() + 1 - meses;
+    const anioBaseDif =
+      hoyDif.getFullYear() + Math.floor((mesBaseDif - 1) / 12);
+    const mesNormDif = ((mesBaseDif - 1 + 120) % 12) + 1;
+    const fechaInicio = fecha.inicioMes(mesNormDif, anioBaseDif);
 
     const comparativo = await this.apoyoModel.aggregate([
       {
@@ -529,9 +699,11 @@ export class DashboardService {
     const alertas = [];
 
     // Alerta 1: Beneficiarios con apoyos duplicados en el mismo mes
-    const mesActual = new Date();
-    mesActual.setDate(1);
-    mesActual.setHours(0, 0, 0, 0);
+    const nowDif = new Date();
+    const mesActual = fecha.inicioMes(
+      nowDif.getMonth() + 1,
+      nowDif.getFullYear(),
+    );
 
     // Alerta 1: Beneficiarios con apoyos duplicados (mismo programa) en el mismo mes
     const duplicados = await this.apoyoModel.aggregate([

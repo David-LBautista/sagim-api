@@ -17,11 +17,25 @@ import {
   OrdenPagoStatus,
 } from './schemas/orden-pago.schema';
 import { Predio, PredioDocument } from '../catastro/schemas/predio.schema';
+import {
+  Ciudadano,
+  CiudadanoDocument,
+} from '../ciudadanos/schemas/ciudadano.schema';
 import { CreatePagoDto, CreateOrdenPagoDto, PagarOrdenDto } from './dto';
 import { PaymentStatus } from '@/shared/enums';
 import { S3Service } from '@/modules/s3/s3.service';
+import {
+  Municipality,
+  MunicipalityDocument,
+} from '@/modules/municipalities/schemas/municipality.schema';
+import {
+  ServicioCobro,
+  ServicioCobroDocument,
+} from '@/modules/tesoreria/schemas/servicio-cobro.schema';
+import { NotificacionesService } from '../notificaciones/notificaciones.service';
+import { PdfService } from '../shared/pdf/pdf.service';
+import { TDocumentDefinitions } from 'pdfmake/interfaces';
 import Stripe from 'stripe';
-import * as PDFDocument from 'pdfkit';
 import { randomUUID } from 'crypto';
 
 @Injectable()
@@ -33,7 +47,15 @@ export class PagosService {
     private pagoModel: Model<PagoDocument>,
     @InjectModel(OrdenPago.name)
     private ordenPagoModel: Model<OrdenPagoDocument>,
+    @InjectModel(Municipality.name)
+    private municipalityModel: Model<MunicipalityDocument>,
+    @InjectModel(Ciudadano.name)
+    private ciudadanoModel: Model<CiudadanoDocument>,
+    @InjectModel(ServicioCobro.name)
+    private servicioCobroModel: Model<ServicioCobroDocument>,
     private s3Service: S3Service,
+    private readonly notificacionesService: NotificacionesService,
+    private readonly pdfService: PdfService,
   ) {
     this.stripe = new Stripe(process.env.STRIPE_SECRET_KEY || '', {
       apiVersion: '2026-01-28.clover',
@@ -134,71 +156,102 @@ export class PagosService {
   async generateReciboPDF(id: string, scope: any): Promise<Buffer> {
     const pago = await this.findPagoById(id, scope);
 
-    return new Promise((resolve, reject) => {
-      const doc = new PDFDocument({ margin: 50 });
-      const chunks: Buffer[] = [];
+    const TZ = 'America/Mexico_City';
+    const fecha = new Date(pago.fechaPago);
+    const fechaStr = fecha.toLocaleDateString('es-MX', {
+      timeZone: TZ,
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+    });
+    const horaStr = fecha.toLocaleTimeString('es-MX', {
+      timeZone: TZ,
+      hour: 'numeric',
+      minute: '2-digit',
+      hour12: true,
+    });
 
-      doc.on('data', (chunk) => chunks.push(chunk));
-      doc.on('end', () => resolve(Buffer.concat(chunks)));
-      doc.on('error', reject);
+    const LINE_WIDTH = 214;
+    const sep = (): any => ({
+      canvas: [
+        { type: 'line', x1: 0, y1: 0, x2: LINE_WIDTH, y2: 0, lineWidth: 0.5 },
+      ],
+      margin: [0, 4, 0, 4],
+    });
+    const row = (label: string, value: string, boldValue = false): any => ({
+      columns: [
+        { text: label, width: '45%', fontSize: 8, color: '#555' },
+        {
+          text: value,
+          width: '55%',
+          fontSize: 8,
+          bold: boldValue,
+          alignment: 'right',
+        },
+      ],
+      margin: [0, 2, 0, 2],
+    });
 
-      // Header
-      doc.fontSize(20).text('RECIBO DE PAGO', { align: 'center' }).moveDown();
+    const pct = (pago as any).porcentajeContribucion ?? 10;
+    const montoCobrado = (pago as any).montoCobrado ?? pago.monto;
+    const subtotal = (pago as any).subtotal ?? montoCobrado;
+    const contribucion = (pago as any).contribucion ?? 0;
 
-      doc
-        .fontSize(12)
-        .text(`Folio: ${pago.folio}`, { align: 'right' })
-        .text(
-          `Fecha: ${new Date(pago.fechaPago).toLocaleDateString('es-MX')}`,
+    const content: any[] = [
+      {
+        text: 'RECIBO DE PAGO',
+        fontSize: 10,
+        bold: true,
+        alignment: 'center',
+        margin: [0, 0, 0, 4],
+      },
+      sep(),
+      row('Folio:', pago.folio, true),
+      row('Fecha:', fechaStr),
+      row('Hora:', horaStr),
+      sep(),
+      row('Concepto:', pago.descripcion || (pago.concepto as string)),
+      row(
+        'Método:',
+        pago.metodoPago === 'card' ? 'Tarjeta' : (pago.metodoPago ?? 'Tarjeta'),
+      ),
+      sep(),
+      row('Subtotal:', `$${subtotal.toFixed(2)}`),
+      row(`Contribución (${pct}%):`, `$${contribucion.toFixed(2)}`),
+      sep(),
+      {
+        columns: [
+          { text: 'TOTAL:', width: '45%', fontSize: 11, bold: true },
           {
-            align: 'right',
+            text: `$${montoCobrado.toFixed(2)}`,
+            width: '55%',
+            fontSize: 11,
+            bold: true,
+            alignment: 'right',
           },
-        )
-        .moveDown(2);
+        ],
+        margin: [0, 2, 0, 4],
+      },
+      sep(),
+      {
+        text: 'Documento generado por SAGIM.',
+        fontSize: 6.5,
+        color: '#666',
+        alignment: 'center',
+        margin: [0, 6, 0, 1],
+      },
+      {
+        text: 'Este recibo es comprobante oficial de pago',
+        fontSize: 6.5,
+        color: '#666',
+        alignment: 'center',
+      },
+    ];
 
-      // Datos del pago
-      doc.fontSize(14).text('Datos del Pago:', { underline: true }).moveDown();
-
-      doc
-        .fontSize(12)
-        .text(`Concepto: ${pago.concepto}`)
-        .text(`Monto: $${pago.monto.toFixed(2)} MXN`)
-        .text(`Método de pago: ${pago.metodoPago || 'Tarjeta'}`)
-        .text(`Estado: ${pago.estado}`)
-        .moveDown();
-
-      if (pago.descripcion) {
-        doc.text(`Descripción: ${pago.descripcion}`).moveDown();
-      }
-
-      // Datos del predio (si aplica)
-      if (pago.predioId) {
-        const predio = pago.predioId as any;
-        doc
-          .fontSize(14)
-          .text('Datos del Predio:', { underline: true })
-          .moveDown();
-
-        doc
-          .fontSize(12)
-          .text(`Clave Catastral: ${predio.claveCatastral}`)
-          .text(`Ubicación: ${predio.ubicacion}`)
-          .moveDown();
-      }
-
-      // Footer
-      doc
-        .moveDown(3)
-        .fontSize(10)
-        .text('Este documento es un comprobante oficial de pago.', {
-          align: 'center',
-        })
-        .fontSize(8)
-        .text(`Stripe Payment Intent: ${pago.stripePaymentIntentId}`, {
-          align: 'center',
-        });
-
-      doc.end();
+    return this.pdfService.generatePdfBuffer({
+      pageSize: { width: 250, height: 340 } as any,
+      pageMargins: [18, 14, 18, 14],
+      content,
     });
   }
 
@@ -220,6 +273,20 @@ export class PagosService {
     const expiresAt = new Date();
     expiresAt.setHours(expiresAt.getHours() + horasValidez);
 
+    // Si tiene servicioId, usar categoria del servicio como areaResponsable canónica
+    let areaResponsable = createOrdenPagoDto.areaResponsable;
+    if (createOrdenPagoDto.servicioId) {
+      const servicio = await this.servicioCobroModel
+        .findById(createOrdenPagoDto.servicioId, 'categoria areaResponsable')
+        .lean();
+      if (servicio && (servicio as any).areaResponsable) {
+        areaResponsable = (servicio as any).areaResponsable;
+      } else if (servicio && (servicio as any).categoria) {
+        // fallback para servicios sin areaResponsable (antes del seed)
+        areaResponsable = (servicio as any).categoria;
+      }
+    }
+
     const ordenPago = new this.ordenPagoModel({
       token,
       municipioId: new Types.ObjectId(municipioId),
@@ -231,13 +298,56 @@ export class PagosService {
         : undefined,
       monto: createOrdenPagoDto.monto,
       descripcion: createOrdenPagoDto.descripcion,
-      areaResponsable: createOrdenPagoDto.areaResponsable,
+      areaResponsable,
       creadaPorId: new Types.ObjectId(userId),
       expiresAt,
       estado: OrdenPagoStatus.PENDIENTE,
+      metadata: { emailCiudadano: createOrdenPagoDto.emailCiudadano },
     });
 
-    return ordenPago.save();
+    const orden = await ordenPago.save();
+
+    // Resolver email y nombre para notificación
+    let emailDestino = createOrdenPagoDto.emailCiudadano;
+    let nombreCiudadano = 'Ciudadano';
+
+    if (createOrdenPagoDto.ciudadanoId) {
+      const ciudadano = await this.ciudadanoModel
+        .findById(
+          createOrdenPagoDto.ciudadanoId,
+          'nombre apellidoPaterno email',
+        )
+        .lean();
+      if (ciudadano) {
+        nombreCiudadano = [
+          (ciudadano as any).nombre,
+          (ciudadano as any).apellidoPaterno,
+        ]
+          .filter(Boolean)
+          .join(' ');
+        if (!emailDestino && (ciudadano as any).email) {
+          emailDestino = (ciudadano as any).email;
+        }
+      }
+    }
+
+    if (emailDestino) {
+      const baseUrl = process.env.FRONTEND_URL || 'https://pagos.sagim.mx';
+      const municipio = await this.municipalityModel
+        .findById(municipioId, 'nombre')
+        .lean();
+      void this.notificacionesService.enviarLinkPago({
+        email: emailDestino,
+        nombreCiudadano,
+        municipioNombre: (municipio as any)?.nombre ?? 'Municipio',
+        descripcion: createOrdenPagoDto.descripcion,
+        monto: createOrdenPagoDto.monto,
+        urlPago: `${baseUrl}/pago/${orden.token}`,
+        expiraEn: expiresAt,
+      });
+    }
+
+    return orden;
   }
 
   /**
@@ -280,6 +390,36 @@ export class PagosService {
       areaResponsable: orden.areaResponsable,
       expiresAt: orden.expiresAt,
       servicio: orden.servicioId,
+    };
+  }
+
+  /**
+   * 2.5️⃣ Crear PaymentIntent en Stripe (endpoint público)
+   * El frontend usa el clientSecret para confirmar el pago con el Card Element.
+   */
+  async crearPaymentIntent(
+    token: string,
+  ): Promise<{ clientSecret: string; monto: number }> {
+    const orden = await this.ordenPagoModel.findOne({ token }).exec();
+
+    if (!orden) {
+      throw new NotFoundException('Orden de pago no encontrada');
+    }
+
+    await this.validarOrdenActiva(orden);
+
+    const paymentIntent = await this.stripe.paymentIntents.create({
+      amount: Math.round(orden.monto * 100), // centavos
+      currency: 'mxn',
+      metadata: {
+        ordenToken: token,
+        municipioId: orden.municipioId.toString(),
+      },
+    });
+
+    return {
+      clientSecret: paymentIntent.client_secret!,
+      monto: orden.monto,
     };
   }
 
@@ -380,6 +520,31 @@ export class PagosService {
     // Esto es para referencia contable. Idealmente debería venir del catálogo de servicios.
     const montoBase = Math.round((montoCobrado / 1.08) * 100) / 100;
 
+    // Desglose fiscal de contribución configurada por el municipio
+    const municipioDoc = await this.municipalityModel
+      .findById(orden.municipioId, 'porcentajeContribucion')
+      .lean();
+    const pct = (municipioDoc as any)?.porcentajeContribucion ?? 10;
+    const subtotal = Number((montoCobrado / (1 + pct / 100)).toFixed(2));
+    const contribucion = Number((montoCobrado - subtotal).toFixed(2));
+
+    // Snapshot de nombre/categoria/areaResponsable del servicio
+    let servicioNombre: string | undefined;
+    let servicioCategoria: string | undefined;
+    let servicioAreaResponsable: string | undefined;
+    let servicioId: Types.ObjectId | undefined;
+    if (orden.servicioId) {
+      const servicio = await this.servicioCobroModel
+        .findById(orden.servicioId, 'nombre categoria areaResponsable')
+        .lean();
+      if (servicio) {
+        servicioNombre = (servicio as any).nombre;
+        servicioCategoria = (servicio as any).categoria;
+        servicioAreaResponsable = (servicio as any).areaResponsable;
+        servicioId = orden.servicioId as Types.ObjectId;
+      }
+    }
+
     // Crear el pago con contabilidad completa
     const pago = new this.pagoModel({
       municipioId: orden.municipioId,
@@ -388,12 +553,23 @@ export class PagosService {
       concepto: orden.concepto,
       descripcion: orden.descripcion,
 
+      // Snapshot de servicio
+      servicioId,
+      servicioNombre,
+      servicioCategoria,
+      areaResponsable: servicioAreaResponsable,
+
       // Montos contables
       montoBase, // Precio ventanilla estimado
       montoEnLinea: montoCobrado, // Precio autorizado en línea
       montoCobrado, // Lo que pagó el ciudadano
       stripeFee: Math.round(stripeFee * 100) / 100, // Fee de Stripe
       montoNetoMunicipio: Math.round(montoNetoMunicipio * 100) / 100, // Neto al municipio
+
+      // Desglose fiscal de contribución
+      subtotal,
+      contribucion,
+      porcentajeContribucion: pct,
 
       // Reglas
       feePagadoPor: 'CIUDADANO',
@@ -426,21 +602,12 @@ export class PagosService {
     await orden.save();
 
     // Generar PDF del recibo
-    const pdfBuffer = await this.generateReciboPDFForPago(pagoGuardado);
+    const pdfBuffer = await this.generateReciboPDFForPago(pagoGuardado, orden);
 
-    // Obtener clave del municipio (deberías tenerla en el modelo Municipality)
-    // Por ahora usar un placeholder - esto debe venir de la BD
-    const municipioClave =
-      'MUNICIPIO_' + orden.municipioId.toString().substring(0, 8).toUpperCase();
-
-    // Generar S3 key siguiendo convención SAGIM
-    const s3Key = this.s3Service.generateKey(
-      municipioClave,
-      'tesoreria',
-      'pagos',
-      'recibo',
+    // Generar S3 key: municipios/{municipioId}/ordenes-pago/recibos/{folio}.pdf
+    const s3Key = S3Service.keyReciboOrden(
+      orden.municipioId.toString(),
       pagoGuardado.folio,
-      pagoGuardado._id.toString(),
     );
 
     // Subir PDF a S3
@@ -453,7 +620,6 @@ export class PagosService {
 
     // Actualizar pago con S3 key
     pagoGuardado.s3Key = s3Key;
-    pagoGuardado.municipioClave = municipioClave;
     await pagoGuardado.save();
 
     // Marcar orden como PAGADA
@@ -498,58 +664,156 @@ export class PagosService {
   }
 
   /**
-   * Generar PDF del recibo para un pago específico (sin necesidad de consultar BD)
+   * Generar PDF del recibo en formato ticket — igual al recibo de caja, sin firma.
    */
-  private async generateReciboPDFForPago(pago: PagoDocument): Promise<Buffer> {
-    return new Promise((resolve, reject) => {
-      const doc = new PDFDocument({ margin: 50 });
-      const chunks: Buffer[] = [];
+  private async generateReciboPDFForPago(
+    pago: PagoDocument,
+    orden: OrdenPagoDocument,
+  ): Promise<Buffer> {
+    // Obtener municipio para nombre y logo
+    const municipio = await this.municipalityModel
+      .findById(orden.municipioId, 'nombre logoUrl')
+      .lean();
+    const municipioNombre = (municipio as any)?.nombre ?? 'Municipio';
+    const logoBase64 = (municipio as any)?.logoUrl
+      ? await this.pdfService
+          .fetchImageAsBase64((municipio as any).logoUrl as string)
+          .catch(() => undefined)
+      : undefined;
 
-      doc.on('data', (chunk) => chunks.push(chunk));
-      doc.on('end', () => resolve(Buffer.concat(chunks)));
-      doc.on('error', reject);
-
-      // Header
-      doc.fontSize(20).text('RECIBO DE PAGO', { align: 'center' }).moveDown();
-
-      doc
-        .fontSize(12)
-        .text(`Folio: ${pago.folio}`, { align: 'right' })
-        .text(
-          `Fecha: ${new Date(pago.fechaPago).toLocaleDateString('es-MX')}`,
-          {
-            align: 'right',
-          },
-        )
-        .moveDown(2);
-
-      // Datos del pago
-      doc.fontSize(14).text('Datos del Pago:', { underline: true }).moveDown();
-
-      doc
-        .fontSize(12)
-        .text(`Concepto: ${pago.descripcion || pago.concepto}`)
-        .text(`Monto pagado: $${pago.montoCobrado.toFixed(2)} MXN`)
-        .text(
-          `Forma de pago: ${pago.metodoPago === 'card' ? 'Tarjeta' : pago.metodoPago}`,
-        )
-        .moveDown();
-
-      // Footer
-      doc
-        .moveDown(3)
-        .fontSize(10)
-        .text('Este documento es un comprobante oficial de pago.', {
-          align: 'center',
-        })
-        .fontSize(8)
-        .text(`Folio de pago: ${pago.folio}`, {
-          align: 'center',
-        })
-        .text(`Almacenado de forma segura`, { align: 'center' });
-
-      doc.end();
+    const TZ = 'America/Mexico_City';
+    const fechaStr = pago.fechaPago.toLocaleDateString('es-MX', {
+      timeZone: TZ,
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
     });
+    const horaStr = pago.fechaPago.toLocaleTimeString('es-MX', {
+      timeZone: TZ,
+      hour: 'numeric',
+      minute: '2-digit',
+      hour12: true,
+    });
+
+    const LINE_WIDTH = 214;
+    const sep = (): any => ({
+      canvas: [
+        { type: 'line', x1: 0, y1: 0, x2: LINE_WIDTH, y2: 0, lineWidth: 0.5 },
+      ],
+      margin: [0, 4, 0, 4],
+    });
+    const thinSep = (): any => ({
+      canvas: [
+        {
+          type: 'line',
+          x1: 0,
+          y1: 0,
+          x2: LINE_WIDTH,
+          y2: 0,
+          lineWidth: 0.3,
+          dash: { length: 2 },
+        },
+      ],
+      margin: [0, 3, 0, 3],
+    });
+    const row = (label: string, value: string, boldValue = false): any => ({
+      columns: [
+        { text: label, width: '45%', fontSize: 8, color: '#555' },
+        {
+          text: value,
+          width: '55%',
+          fontSize: 8,
+          bold: boldValue,
+          alignment: 'right',
+        },
+      ],
+      margin: [0, 2, 0, 2],
+    });
+
+    const content: any[] = [];
+
+    if (logoBase64) {
+      content.push({
+        image: logoBase64,
+        width: 44,
+        alignment: 'center',
+        margin: [0, 0, 0, 4],
+      });
+    }
+    content.push({
+      text: municipioNombre.toUpperCase(),
+      fontSize: 10,
+      bold: true,
+      alignment: 'center',
+      margin: [0, 0, 0, 2],
+    });
+    content.push(sep());
+    content.push({
+      text: 'RECIBO DE PAGO EN LÍNEA',
+      fontSize: 9,
+      alignment: 'center',
+      margin: [0, 0, 0, 4],
+    });
+    content.push(sep());
+
+    content.push(row('Folio:', pago.folio, true));
+    content.push(row('Fecha:', fechaStr));
+    content.push(row('Hora:', horaStr));
+    content.push(sep());
+
+    content.push(
+      row('Concepto:', pago.descripcion || (pago.concepto as string)),
+    );
+    content.push(thinSep());
+
+    content.push(row('Canal:', 'Pago en línea'));
+    content.push(row('Método:', 'Tarjeta'));
+    content.push(thinSep());
+
+    const pct = pago.porcentajeContribucion ?? 10;
+    content.push(
+      row('Subtotal:', `$${(pago.subtotal ?? pago.montoCobrado).toFixed(2)}`),
+    );
+    content.push(
+      row(`Contribución (${pct}%):`, `$${(pago.contribucion ?? 0).toFixed(2)}`),
+    );
+    content.push(sep());
+    content.push({
+      columns: [
+        { text: 'TOTAL:', width: '45%', fontSize: 11, bold: true },
+        {
+          text: `$${pago.montoCobrado.toFixed(2)}`,
+          width: '55%',
+          fontSize: 11,
+          bold: true,
+          alignment: 'right',
+        },
+      ],
+      margin: [0, 2, 0, 4],
+    });
+
+    content.push(sep());
+    content.push({
+      text: 'Documento generado por SAGIM.',
+      fontSize: 6.5,
+      color: '#666',
+      alignment: 'center',
+      margin: [0, 6, 0, 1],
+    });
+    content.push({
+      text: 'Este recibo es comprobante oficial de pago',
+      fontSize: 6.5,
+      color: '#666',
+      alignment: 'center',
+    });
+
+    const docDef: TDocumentDefinitions = {
+      pageSize: { width: 250, height: 370 } as any,
+      pageMargins: [18, 14, 18, 14],
+      content,
+    };
+
+    return this.pdfService.generatePdfBuffer(docDef);
   }
 
   /**

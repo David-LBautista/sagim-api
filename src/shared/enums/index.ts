@@ -58,6 +58,18 @@ export enum PaymentStatus {
   REEMBOLSADO = 'REEMBOLSADO',
 }
 
+// Payment method (presencial)
+export enum MetodoPago {
+  EFECTIVO = 'EFECTIVO',
+  TARJETA = 'TARJETA', // deshabilitado en MVP
+}
+
+// Payment channel
+export enum CanalPago {
+  CAJA = 'CAJA',
+  EN_LINEA = 'EN_LINEA',
+}
+
 // Notification types
 export enum NotificationType {
   EMAIL = 'EMAIL',
