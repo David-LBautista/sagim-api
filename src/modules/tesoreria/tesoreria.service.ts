@@ -320,14 +320,17 @@ export class TesoreriaService {
       estado: OrdenPagoStatus.PENDIENTE,
       creadaPorId: new Types.ObjectId(userId),
       expiresAt,
-      metadata: { emailCiudadano: createOrdenDto.emailCiudadano },
+      metadata: {
+        emailCiudadano: createOrdenDto.emailCiudadano,
+        nombreContribuyente: createOrdenDto.nombreContribuyente,
+      },
     });
 
     const orden = await ordenPago.save();
 
     // Resolver email y nombre para notificación
     let emailDestino = createOrdenDto.emailCiudadano;
-    let nombreCiudadano = 'Ciudadano';
+    let nombreCiudadano = createOrdenDto.nombreContribuyente || 'Ciudadano';
 
     if (createOrdenDto.ciudadanoId) {
       const ciudadano = await this.ciudadanoModel
@@ -479,7 +482,9 @@ export class TesoreriaService {
   }
 
   async cancelarOrden(id: string, municipioId: string): Promise<OrdenPago> {
-    const orden = await this.findOrdenById(id, municipioId);
+    const orden = await this.findOrdenById(id, {
+      municipioId: new Types.ObjectId(municipioId),
+    });
 
     if (orden.estado === OrdenPagoStatus.PAGADA) {
       throw new BadRequestException('No se puede cancelar una orden ya pagada');
@@ -498,7 +503,9 @@ export class TesoreriaService {
     id: string,
     municipioId: string,
   ): Promise<{ url: string; expiraEn: Date }> {
-    const orden = await this.findOrdenById(id, municipioId);
+    const orden = await this.findOrdenById(id, {
+      municipioId: new Types.ObjectId(municipioId),
+    });
 
     if (orden.estado !== OrdenPagoStatus.PENDIENTE) {
       throw new BadRequestException(
@@ -540,7 +547,8 @@ export class TesoreriaService {
         .lean();
       const municipioNombre = (municipio as any)?.nombre ?? 'Municipio';
 
-      let nombreCiudadano = 'Ciudadano';
+      let nombreCiudadano =
+        (orden as any)?.metadata?.nombreContribuyente || 'Ciudadano';
       if ((orden as any)?.ciudadanoId) {
         const ciudadano = await this.ciudadanoModel
           .findById((orden as any).ciudadanoId, 'nombre apellidoPaterno')

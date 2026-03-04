@@ -357,6 +357,7 @@ export class PagosService {
     const orden = await this.ordenPagoModel
       .findOne({ token })
       .populate('servicioId', 'nombre descripcion costoBase areaResponsable')
+      .populate('municipioId', 'nombre logoUrl')
       .exec();
 
     if (!orden) {
@@ -382,6 +383,7 @@ export class PagosService {
     }
 
     // Retornar solo datos necesarios (sin IDs internos)
+    const municipio = orden.municipioId as any;
     return {
       token: orden.token,
       concepto: orden.concepto,
@@ -390,6 +392,10 @@ export class PagosService {
       areaResponsable: orden.areaResponsable,
       expiresAt: orden.expiresAt,
       servicio: orden.servicioId,
+      municipio: {
+        nombre: municipio?.nombre ?? null,
+        logoUrl: municipio?.logoUrl ?? null,
+      },
     };
   }
 

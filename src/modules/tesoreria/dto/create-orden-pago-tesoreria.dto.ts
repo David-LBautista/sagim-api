@@ -45,6 +45,16 @@ export class CreateOrdenPagoTesoreriaDto {
 
   @ApiProperty({
     description:
+      'Nombre del contribuyente (opcional — se usa cuando no se vincula un ciudadano registrado)',
+    example: 'Juan Pérez García',
+    required: false,
+  })
+  @IsOptional()
+  @IsString()
+  nombreContribuyente?: string;
+
+  @ApiProperty({
+    description:
       'Email del ciudadano para enviar link (opcional si se provee ciudadanoId con email)',
     example: 'usuario@gmail.com',
     required: false,
