@@ -21,6 +21,7 @@ import {
   OrdenPago,
   OrdenPagoDocument,
   OrdenPagoStatus,
+  TipoOrden,
 } from '../pagos/schemas/orden-pago.schema';
 import { Pago, PagoDocument } from '../pagos/schemas/pago.schema';
 import { PagoCaja, PagoCajaDocument } from './schemas/pago-caja.schema';
@@ -34,14 +35,17 @@ import {
 } from '../ciudadanos/schemas/ciudadano.schema';
 import { S3Service } from '../s3/s3.service';
 import { Counter, CounterDocument } from '../dif/schemas/counter.schema';
+import { SagimGateway } from '../notificaciones/sagim.gateway';
 import {
   CreateServicioCobroDto,
   CreateOrdenPagoTesoreriaDto,
+  CreateOrdenInternaDto,
+  CobrarOrdenInternaDto,
   UpsertServicioOverrideDto,
   RegistrarPagoCajaDto,
 } from './dto';
 import { CanalPago } from '@/shared/enums';
-import { v4 as uuidv4 } from 'uuid';
+import { randomUUID } from 'crypto';
 
 @Injectable()
 export class TesoreriaService {
@@ -63,6 +67,7 @@ export class TesoreriaService {
     private readonly s3Service: S3Service,
     private readonly pdfService: PdfService,
     private readonly notificacionesService: NotificacionesService,
+    private readonly sagimGateway: SagimGateway,
   ) {}
 
   // ==================== SERVICIOS COBRABLES ====================
@@ -230,10 +235,15 @@ export class TesoreriaService {
   }
 
   async findServicioById(id: string, scope: any): Promise<ServicioCobro> {
+    const municipioId = scope?.municipioId;
+
+    // Buscar primero como servicio propio del municipio, luego como global
     const servicio = await this.servicioCobroModel
       .findOne({
         _id: new Types.ObjectId(id),
-        ...scope,
+        ...(municipioId
+          ? { $or: [{ municipioId }, { municipioId: null }] }
+          : scope),
       })
       .exec();
 
@@ -291,17 +301,16 @@ export class TesoreriaService {
     userId: string,
   ): Promise<OrdenPago> {
     // Validar que el servicio existe
-    const servicio = await this.findServicioById(
-      createOrdenDto.servicioId,
-      municipioId,
-    );
+    const servicio = await this.findServicioById(createOrdenDto.servicioId, {
+      municipioId: new Types.ObjectId(municipioId),
+    });
 
     if (!servicio.activo) {
       throw new BadRequestException('El servicio no está activo');
     }
 
     // Generar token único
-    const token = uuidv4();
+    const token = randomUUID();
 
     // Calcular expiración
     const horasValidez = createOrdenDto.horasValidez || 48;
@@ -317,6 +326,7 @@ export class TesoreriaService {
         : undefined,
       monto: createOrdenDto.monto,
       descripcion: createOrdenDto.concepto,
+      folioDocumento: createOrdenDto.folioDocumento,
       estado: OrdenPagoStatus.PENDIENTE,
       creadaPorId: new Types.ObjectId(userId),
       expiresAt,
@@ -369,6 +379,207 @@ export class TesoreriaService {
     }
 
     return orden;
+  }
+
+  // ==================== ÓRDENES INTERNAS (PRESENCIAL → CAJA) ====================
+
+  async crearOrdenInterna(
+    dto: CreateOrdenInternaDto,
+    municipioId: string,
+    userId: string,
+  ): Promise<OrdenPago> {
+    // Debe venir al menos ciudadanoId o nombreContribuyente
+    if (!dto.ciudadanoId && !dto.nombreContribuyente) {
+      throw new BadRequestException(
+        'Debe proporcionar ciudadanoId o nombreContribuyente',
+      );
+    }
+
+    // Resolver nombre para WS y validar existencia si viene ciudadanoId
+    let nombreContribuyenteResuelto: string;
+
+    if (dto.ciudadanoId) {
+      const ciudadano = await this.ciudadanoModel
+        .findOne({
+          _id: new Types.ObjectId(dto.ciudadanoId),
+          municipioId: new Types.ObjectId(municipioId),
+        })
+        .lean();
+
+      if (!ciudadano) {
+        throw new NotFoundException(
+          `Ciudadano con ID ${dto.ciudadanoId} no encontrado en este municipio`,
+        );
+      }
+
+      nombreContribuyenteResuelto = [
+        ciudadano.nombre,
+        ciudadano.apellidoPaterno,
+        ciudadano.apellidoMaterno,
+      ]
+        .filter(Boolean)
+        .join(' ');
+    } else {
+      nombreContribuyenteResuelto = dto.nombreContribuyente!;
+    }
+
+    // Validar servicio
+    const servicio = await this.findServicioById(dto.servicioId, {
+      municipioId: new Types.ObjectId(municipioId),
+    });
+    if (!servicio.activo) {
+      throw new BadRequestException('El servicio no está activo');
+    }
+
+    // Generar folio y token único
+    const folio = await this.generateFolioOrdenInterna(municipioId);
+    const token = randomUUID();
+
+    const ordenPago = new this.ordenPagoModel({
+      token,
+      folio,
+      tipo: TipoOrden.INTERNA,
+      municipioId: new Types.ObjectId(municipioId),
+      servicioId: new Types.ObjectId(dto.servicioId),
+      ...(dto.ciudadanoId && {
+        ciudadanoId: new Types.ObjectId(dto.ciudadanoId),
+      }),
+      nombreContribuyente: nombreContribuyenteResuelto, // snapshot siempre — permite buscar por nombre independientemente de si hay ciudadanoId
+      monto: dto.monto,
+      descripcion: dto.descripcion,
+      areaResponsable: dto.areaResponsable,
+      observaciones: dto.observaciones,
+      folioDocumento: dto.folioDocumento,
+      estado: OrdenPagoStatus.PENDIENTE,
+      creadaPorId: new Types.ObjectId(userId),
+      // Sin expiresAt — las internas no expiran automáticamente
+    });
+
+    const savedOrden = await ordenPago.save();
+
+    // Notificar en tiempo real a los cajeros de tesorería
+    this.sagimGateway.emitOrdenCreada(municipioId, {
+      ordenId: (savedOrden._id as Types.ObjectId).toString(),
+      folioOrden: savedOrden.folio,
+      ciudadano: nombreContribuyenteResuelto,
+      servicio: dto.descripcion,
+      areaResponsable: dto.areaResponsable,
+      monto: dto.monto,
+      timestamp: new Date(),
+    });
+
+    return savedOrden;
+  }
+
+  async cobrarOrdenInterna(
+    id: string,
+    dto: CobrarOrdenInternaDto,
+    municipioId: string,
+    cajeroId: string,
+    cajeroNombre: string,
+  ) {
+    // 1. Cargar y validar la orden
+    const orden = await this.ordenPagoModel
+      .findOne({
+        _id: new Types.ObjectId(id),
+        municipioId: new Types.ObjectId(municipioId),
+        tipo: TipoOrden.INTERNA,
+        estado: OrdenPagoStatus.PENDIENTE,
+      })
+      .lean();
+
+    if (!orden) {
+      throw new NotFoundException(
+        'Orden interna no encontrada o no está en estado PENDIENTE',
+      );
+    }
+
+    // 2. Reutilizar registrarPagoCaja con los datos de la orden
+    //    El campo ordenInternaId activa la lógica de marcar PAGADA + WS
+    const registrarDto: RegistrarPagoCajaDto = {
+      servicioId: (orden.servicioId as Types.ObjectId).toString(),
+      monto: orden.monto,
+      metodoPago: dto.metodoPago,
+      ciudadanoId: orden.ciudadanoId
+        ? (orden.ciudadanoId as Types.ObjectId).toString()
+        : undefined,
+      // Pasar nombre libre para que aparezca en el PDF cuando no hay ciudadanoId
+      // Si el cajero envía nombreContribuyente en el DTO, tiene prioridad sobre el de la orden
+      nombreContribuyente: orden.ciudadanoId
+        ? undefined
+        : (dto.nombreContribuyente ?? (orden as any).nombreContribuyente),
+      observaciones: dto.observaciones,
+      referenciaDocumento:
+        dto.folioDocumento ?? (orden as any).folioDocumento ?? undefined,
+      ordenInternaId: id,
+    };
+
+    return this.registrarPagoCaja(
+      registrarDto,
+      municipioId,
+      cajeroId,
+      cajeroNombre,
+    );
+  }
+
+  private async generateFolioOrdenInterna(
+    municipioId: string,
+  ): Promise<string> {
+    const date = new Date();
+    const year = date.getFullYear();
+    const month = (date.getMonth() + 1).toString().padStart(2, '0');
+    const munShort = municipioId.toString().slice(-4).toUpperCase();
+    const counterId = `ord-int-${munShort}-${year}${month}`;
+
+    const counter = await this.counterModel.findOneAndUpdate(
+      { _id: counterId },
+      { $inc: { seq: 1 } },
+      { upsert: true, new: true },
+    );
+
+    const secuencial = counter.seq.toString().padStart(4, '0');
+    return `ORD-${year.toString().slice(-2)}${month}-${secuencial}`;
+  }
+
+  async findOrdenesInternas(
+    scope: any,
+    filters?: {
+      estado?: string;
+      ciudadanoId?: string;
+      areaResponsable?: string;
+      fechaDesde?: Date;
+      fechaHasta?: Date;
+      busqueda?: string;
+    },
+  ): Promise<OrdenPago[]> {
+    const query: any = { ...scope, tipo: TipoOrden.INTERNA };
+
+    if (filters?.estado) query.estado = filters.estado;
+    if (filters?.ciudadanoId)
+      query.ciudadanoId = new Types.ObjectId(filters.ciudadanoId);
+    if (filters?.areaResponsable)
+      query.areaResponsable = filters.areaResponsable;
+    if (filters?.fechaDesde || filters?.fechaHasta) {
+      query.createdAt = {};
+      if (filters.fechaDesde) query.createdAt.$gte = filters.fechaDesde;
+      if (filters.fechaHasta) query.createdAt.$lte = filters.fechaHasta;
+    }
+    if (filters?.busqueda) {
+      query.$or = [
+        { descripcion: { $regex: filters.busqueda, $options: 'i' } },
+        { folio: { $regex: filters.busqueda, $options: 'i' } },
+        { areaResponsable: { $regex: filters.busqueda, $options: 'i' } },
+        { nombreContribuyente: { $regex: filters.busqueda, $options: 'i' } },
+      ];
+    }
+
+    return this.ordenPagoModel
+      .find(query)
+      .populate('servicioId', 'nombre costoBase')
+      .populate('ciudadanoId', 'nombre apellidoPaterno apellidoMaterno curp')
+      .populate('creadaPorId', 'nombre email')
+      .sort({ createdAt: -1 })
+      .exec();
   }
 
   async findAllOrdenes(
@@ -802,7 +1013,7 @@ export class TesoreriaService {
           ? [c.nombre, c.apellidoPaterno, c.apellidoMaterno]
               .filter(Boolean)
               .join(' ')
-          : null;
+          : ((p as any).nombreContribuyente ?? null);
         return {
           _id: (p as any)._id.toString(),
           folio: p.folio,
@@ -840,12 +1051,18 @@ export class TesoreriaService {
     return resumen;
   }
 
-  async reporteMensual(scope: any, mes: number, año: number): Promise<any> {
+  async reporteMensual(
+    scope: any,
+    mes: number,
+    año: number,
+    detalle = false,
+  ): Promise<any> {
     // Rango mensual en America/Mexico_City → convertido a UTC para la consulta
     const inicioMes = fecha.inicioMes(mes, año);
     const finMes = fecha.finMes(mes, año);
 
     const municipioId = scope.municipioId?.toString();
+    const mid = new Types.ObjectId(municipioId);
     const pagos = await this.findPagosConsolidados(
       municipioId,
       inicioMes,
@@ -865,7 +1082,7 @@ export class TesoreriaService {
       porServicio[p.servicioNombre].total += p.monto;
     }
 
-    return {
+    const resumen: any = {
       mes,
       año,
       totalRecaudado,
@@ -873,6 +1090,87 @@ export class TesoreriaService {
       porCanal,
       porServicio,
     };
+
+    if (detalle) {
+      const pagosCajaDoc = await this.pagoCajaModel
+        .find({
+          municipioId: mid,
+          fechaPago: { $gte: inicioMes, $lte: finMes },
+        })
+        .populate({
+          path: 'ciudadanoId',
+          select: 'nombre apellidoPaterno apellidoMaterno',
+        })
+        .sort({ fechaPago: 1 })
+        .lean()
+        .exec();
+
+      const ordenes = await this.ordenPagoModel
+        .find({ municipioId: mid, estado: OrdenPagoStatus.PAGADA })
+        .select('_id servicioId')
+        .populate({ path: 'servicioId', select: 'nombre' })
+        .lean()
+        .exec();
+      const ordenNombreMap = new Map(
+        ordenes.map((o) => [
+          o._id.toString(),
+          (o.servicioId as any)?.nombre ?? 'Sin servicio',
+        ]),
+      );
+      const pagosStripeDoc = await this.pagoModel
+        .find({
+          ordenPagoId: { $in: ordenes.map((o) => o._id) },
+          fechaPago: { $gte: inicioMes, $lte: finMes },
+        })
+        .sort({ fechaPago: 1 })
+        .lean()
+        .exec();
+
+      const formatFechaHora = (d: Date) =>
+        fecha.utcAMexico(d).format('DD/MM HH:mm');
+
+      const detalleCaja = pagosCajaDoc.map((p) => {
+        const c = p.ciudadanoId as any;
+        const ciudadano = c
+          ? [c.nombre, c.apellidoPaterno, c.apellidoMaterno]
+              .filter(Boolean)
+              .join(' ')
+          : ((p as any).nombreContribuyente ?? null);
+        return {
+          _id: (p as any)._id.toString(),
+          folio: p.folio,
+          fechaHora: formatFechaHora(p.fechaPago),
+          servicio: p.servicioNombre,
+          ciudadano,
+          referenciaDocumento: p.referenciaDocumento ?? null,
+          monto: p.monto,
+          metodoPago: p.metodoPago,
+          canal: 'CAJA',
+          tieneRecibo: !!p.reciboS3Key,
+        };
+      });
+
+      const detalleLinea = pagosStripeDoc.map((p) => ({
+        _id: (p as any)._id.toString(),
+        folio: (p as any).folio ?? null,
+        fechaHora: formatFechaHora((p as any).fechaPago),
+        servicio:
+          ordenNombreMap.get((p as any).ordenPagoId?.toString()) ??
+          'Sin servicio',
+        ciudadano: null,
+        referenciaDocumento: null,
+        monto: p.monto,
+        metodoPago: (p as any).metodoPago ?? 'TARJETA',
+        canal: 'EN_LINEA',
+        tieneRecibo: !!(p as any).s3Key,
+      }));
+
+      resumen.pagos = [...detalleCaja, ...detalleLinea].sort((a, b) =>
+        a.fechaHora.localeCompare(b.fechaHora),
+      );
+    }
+
+    return resumen;
   }
 
   async reportePorServicio(servicioId: string, scope: any): Promise<any> {
@@ -971,6 +1269,7 @@ export class TesoreriaService {
       servicioNombre: (servicio as any).nombre, // snapshot
       servicioCategoria: (servicio as any).categoria, // snapshot
       ciudadanoId: dto.ciudadanoId ? new Types.ObjectId(dto.ciudadanoId) : null,
+      nombreContribuyente: dto.nombreContribuyente ?? null,
       monto: dto.monto,
       subtotal,
       contribucion,
@@ -986,6 +1285,40 @@ export class TesoreriaService {
       reciboS3Key: null,
     }).save();
 
+    // 3.5 Si viene vinculada a una orden interna → marcar PAGADA y emitir WS
+    if (dto.ordenInternaId) {
+      const ordenInterna = await this.ordenPagoModel
+        .findOne({
+          _id: new Types.ObjectId(dto.ordenInternaId),
+          municipioId: new Types.ObjectId(municipioId),
+          tipo: TipoOrden.INTERNA,
+          estado: OrdenPagoStatus.PENDIENTE,
+        })
+        .populate('ciudadanoId', 'nombre apellidoPaterno')
+        .lean();
+
+      if (ordenInterna) {
+        await this.ordenPagoModel.updateOne(
+          { _id: ordenInterna._id },
+          { estado: OrdenPagoStatus.PAGADA, usadaAt: new Date() },
+        );
+
+        const ciudadanoDoc = ordenInterna.ciudadanoId as any;
+        const ciudadanoNombreWs = ciudadanoDoc
+          ? `${ciudadanoDoc.nombre ?? ''} ${ciudadanoDoc.apellidoPaterno ?? ''}`.trim()
+          : 'Ciudadano';
+
+        this.sagimGateway.emitOrdenPagada(municipioId, {
+          folioOrden: (ordenInterna as any).folio,
+          ciudadano: ciudadanoNombreWs,
+          servicio: (ordenInterna as any).descripcion ?? '',
+          areaResponsable: (ordenInterna as any).areaResponsable,
+          monto: (ordenInterna as any).monto,
+          timestamp: new Date(),
+        });
+      }
+    }
+
     // 4. Generar PDF del recibo y subir a S3
     // Si falla (S3 caído, etc.) el pago queda guardado — se puede regenerar después
     try {
@@ -997,7 +1330,7 @@ export class TesoreriaService {
             .catch(() => undefined)
         : undefined;
 
-      // Obtener nombre del ciudadano si aplica
+      // Obtener nombre del contribuyente para el recibo
       let ciudadanoNombre: string | null = null;
       if (dto.ciudadanoId) {
         const c = await this.ciudadanoModel
@@ -1013,6 +1346,9 @@ export class TesoreriaService {
             .join(' ')
             .toUpperCase();
         }
+      } else if (dto.nombreContribuyente) {
+        // Nombre libre — sin ciudadano registrado
+        ciudadanoNombre = dto.nombreContribuyente.toUpperCase();
       }
 
       // Generar PDF
@@ -1050,12 +1386,31 @@ export class TesoreriaService {
       pago.reciboS3Key = s3Key;
       await pago.save();
 
+      // Emitir evento WS: nuevo pago en caja
+      this.sagimGateway.emitPagoCaja(municipioId, {
+        folio: pago.folio,
+        servicio: (servicio as any).nombre,
+        monto: pago.monto,
+        metodoPago: dto.metodoPago,
+        timestamp: pago.fechaPago,
+      });
+
       return { ...pago.toObject(), reciboUrl };
     } catch (err) {
       // PDF/S3 falló pero el pago está guardado — devolver sin reciboUrl
       console.error(
         `[TesoreriaService] Error generando recibo PDF: ${err.message}`,
       );
+
+      // Emitir evento WS aunque el PDF haya fallado
+      this.sagimGateway.emitPagoCaja(municipioId, {
+        folio: pago.folio,
+        servicio: (servicio as any).nombre,
+        monto: pago.monto,
+        metodoPago: dto.metodoPago,
+        timestamp: pago.fechaPago,
+      });
+
       return { ...pago.toObject(), reciboUrl: null };
     }
   }
@@ -1156,6 +1511,101 @@ export class TesoreriaService {
       municipioId,
       tipo: 'corte-diario',
       generadoEn: new Date().toISOString(),
+    });
+  }
+
+  async generarCorteMensualPdf(
+    scope: any,
+    mes: number,
+    año: number,
+  ): Promise<{ url: string; key: string; expiraEn: Date }> {
+    const municipioId = scope.municipioId?.toString();
+
+    const resumen = await this.reporteMensual(scope, mes, año, true);
+
+    const municipio = await this.municipalityModel
+      .findById(municipioId, 'nombre logoUrl')
+      .lean();
+    const municipioNombre = (municipio as any)?.nombre ?? 'Municipio';
+    const logoBase64 = (municipio as any)?.logoUrl
+      ? await this.pdfService
+          .fetchImageAsBase64((municipio as any).logoUrl)
+          .catch(() => undefined)
+      : undefined;
+
+    const MESES = [
+      'Enero',
+      'Febrero',
+      'Marzo',
+      'Abril',
+      'Mayo',
+      'Junio',
+      'Julio',
+      'Agosto',
+      'Septiembre',
+      'Octubre',
+      'Noviembre',
+      'Diciembre',
+    ];
+    const mesStr = `${MESES[mes - 1]} ${año}`;
+
+    const docDefinition = this.buildCorteMensualDefinition({
+      municipioNombre,
+      logoBase64,
+      mesStr,
+      resumen,
+    });
+    const pdfBuffer = await this.pdfService.generatePdfBuffer(docDefinition);
+
+    const periodo = `${año}${mes.toString().padStart(2, '0')}`;
+    const key = S3Service.keyReporteTesoreria(municipioId, 'mensual', periodo);
+
+    return this.pdfService.uploadAndSign(key, pdfBuffer, {
+      municipioId,
+      tipo: 'corte-mensual',
+      generadoEn: fecha.ahoraEnMexico().toISOString(),
+    });
+  }
+
+  async generarReporteServicioPdf(
+    servicioId: string,
+    scope: any,
+  ): Promise<{ url: string; key: string; expiraEn: Date }> {
+    const municipioId = scope.municipioId?.toString();
+
+    const stats = await this.reportePorServicio(servicioId, scope);
+
+    const municipio = await this.municipalityModel
+      .findById(municipioId, 'nombre logoUrl')
+      .lean();
+    const municipioNombre = (municipio as any)?.nombre ?? 'Municipio';
+    const logoBase64 = (municipio as any)?.logoUrl
+      ? await this.pdfService
+          .fetchImageAsBase64((municipio as any).logoUrl)
+          .catch(() => undefined)
+      : undefined;
+
+    const docDefinition = this.buildReporteServicioDefinition({
+      municipioNombre,
+      logoBase64,
+      stats,
+    });
+    const pdfBuffer = await this.pdfService.generatePdfBuffer(docDefinition);
+
+    const ahora = fecha.ahoraEnMexico();
+    const periodo = ahora.format('YYYYMMDD');
+    const sid = servicioId.slice(-6).toUpperCase();
+    const key = S3Service.keyReporteTesoreria(
+      municipioId,
+      'servicios',
+      `${sid}-${periodo}`,
+    );
+
+    return this.pdfService.uploadAndSign(key, pdfBuffer, {
+      municipioId,
+      tipo: 'reporte-servicio',
+      servicioId,
+      generadoEn: ahora.toISOString(),
     });
   }
 
@@ -1338,6 +1788,382 @@ export class TesoreriaService {
         resumenValor: { fontSize: 11, bold: true },
         thTable: { fontSize: 8, bold: true, color: '#333' },
         tdTable: { fontSize: 8 },
+      },
+    } as TDocumentDefinitions;
+  }
+
+  // ==================== PDF PRIVADO — REPORTE MENSUAL ====================
+
+  private buildCorteMensualDefinition(params: {
+    municipioNombre: string;
+    logoBase64?: string;
+    mesStr: string;
+    resumen: any;
+  }): TDocumentDefinitions {
+    const { municipioNombre, logoBase64, mesStr, resumen } = params;
+    const porServicio: Record<string, { cantidad: number; total: number }> =
+      resumen.porServicio ?? {};
+    const pagos: any[] = resumen.pagos ?? [];
+
+    const content: any[] = [];
+
+    if (logoBase64) {
+      content.push({
+        image: logoBase64,
+        width: 60,
+        alignment: 'center',
+        margin: [0, 0, 0, 6],
+      });
+    }
+    content.push({
+      text: municipioNombre.toUpperCase(),
+      fontSize: 14,
+      bold: true,
+      alignment: 'center',
+      margin: [0, 0, 0, 2],
+    });
+    content.push({
+      text: 'REPORTE MENSUAL DE INGRESOS',
+      fontSize: 11,
+      alignment: 'center',
+      margin: [0, 0, 0, 2],
+    });
+    content.push({
+      text: mesStr,
+      fontSize: 9,
+      color: '#555',
+      alignment: 'center',
+      margin: [0, 0, 0, 14],
+    });
+
+    // Cuadro resumen
+    content.push({
+      table: {
+        widths: ['*', '*', '*', '*'],
+        body: [
+          [
+            {
+              text: 'Total Recaudado',
+              style: 'resumenLabel',
+              alignment: 'center',
+            },
+            { text: 'Operaciones', style: 'resumenLabel', alignment: 'center' },
+            { text: 'Caja', style: 'resumenLabel', alignment: 'center' },
+            { text: 'En Línea', style: 'resumenLabel', alignment: 'center' },
+          ],
+          [
+            {
+              text: `$${(resumen.totalRecaudado ?? 0).toFixed(2)}`,
+              style: 'resumenValor',
+              alignment: 'center',
+            },
+            {
+              text: `${resumen.totalOperaciones ?? 0}`,
+              style: 'resumenValor',
+              alignment: 'center',
+            },
+            {
+              text: `$${(resumen.porCanal?.CAJA ?? 0).toFixed(2)}`,
+              style: 'resumenValor',
+              alignment: 'center',
+            },
+            {
+              text: `$${(resumen.porCanal?.EN_LINEA ?? 0).toFixed(2)}`,
+              style: 'resumenValor',
+              alignment: 'center',
+            },
+          ],
+        ],
+      },
+      layout: 'lightHorizontalLines',
+      margin: [0, 0, 0, 16],
+    });
+
+    // Tabla desglose por servicio
+    const servicioKeys = Object.keys(porServicio);
+    if (servicioKeys.length === 0) {
+      content.push({
+        text: 'Sin movimientos en este período.',
+        fontSize: 9,
+        color: '#888',
+        alignment: 'center',
+        margin: [0, 10, 0, 0],
+      });
+    } else {
+      content.push({
+        text: 'DESGLOSE POR SERVICIO',
+        fontSize: 10,
+        bold: true,
+        margin: [0, 0, 0, 6],
+      });
+
+      const headerRow = [
+        { text: 'Servicio', style: 'thTable' },
+        { text: 'Operaciones', style: 'thTable', alignment: 'center' },
+        { text: 'Total', style: 'thTable', alignment: 'right' },
+      ];
+
+      const dataRows = servicioKeys.map((nombre) => [
+        { text: nombre, style: 'tdTable' },
+        {
+          text: `${porServicio[nombre].cantidad}`,
+          style: 'tdTable',
+          alignment: 'center',
+        },
+        {
+          text: `$${porServicio[nombre].total.toFixed(2)}`,
+          style: 'tdTable',
+          alignment: 'right',
+        },
+      ]);
+
+      const totalRow = [
+        {
+          text: 'TOTAL',
+          bold: true,
+          fontSize: 9,
+          border: [false, true, false, false],
+        },
+        {
+          text: `${resumen.totalOperaciones ?? 0}`,
+          bold: true,
+          fontSize: 9,
+          alignment: 'center',
+          border: [false, true, false, false],
+        },
+        {
+          text: `$${(resumen.totalRecaudado ?? 0).toFixed(2)}`,
+          bold: true,
+          fontSize: 9,
+          alignment: 'right',
+          border: [false, true, false, false],
+        },
+      ];
+
+      content.push({
+        table: {
+          headerRows: 1,
+          widths: ['*', 'auto', 'auto'],
+          body: [headerRow, ...dataRows, totalRow],
+        },
+        layout: 'lightHorizontalLines',
+      });
+    }
+
+    // Tabla de movimientos individuales (solo si viene detalle)
+    if (pagos.length > 0) {
+      content.push({
+        text: 'MOVIMIENTOS DEL MES',
+        fontSize: 10,
+        bold: true,
+        margin: [0, 16, 0, 6],
+      });
+
+      const mvHeaderRow = [
+        { text: 'Folio', style: 'thTable' },
+        { text: 'Fecha/Hora', style: 'thTable' },
+        { text: 'Servicio', style: 'thTable' },
+        { text: 'Ciudadano', style: 'thTable' },
+        { text: 'Canal', style: 'thTable' },
+        { text: 'Método', style: 'thTable' },
+        { text: 'Monto', style: 'thTable', alignment: 'right' },
+      ];
+
+      const mvDataRows = pagos.map((p) => [
+        { text: p.folio ?? '—', style: 'tdTable' },
+        { text: p.fechaHora ?? '—', style: 'tdTable' },
+        { text: p.servicio ?? '—', style: 'tdTable' },
+        { text: p.ciudadano ?? '—', style: 'tdTable' },
+        { text: p.canal ?? '—', style: 'tdTable' },
+        { text: p.metodoPago ?? '—', style: 'tdTable' },
+        {
+          text: `$${(p.monto ?? 0).toFixed(2)}`,
+          style: 'tdTable',
+          alignment: 'right',
+        },
+      ]);
+
+      const mvTotalRow = [
+        { text: '', colSpan: 5, border: [false, true, false, false] },
+        {},
+        {},
+        {},
+        {},
+        {
+          text: 'TOTAL:',
+          bold: true,
+          fontSize: 9,
+          border: [false, true, false, false],
+        },
+        {
+          text: `$${(resumen.totalRecaudado ?? 0).toFixed(2)}`,
+          bold: true,
+          fontSize: 9,
+          alignment: 'right',
+          border: [false, true, false, false],
+        },
+      ];
+
+      content.push({
+        table: {
+          headerRows: 1,
+          widths: ['auto', 'auto', '*', '*', 'auto', 'auto', 'auto'],
+          body: [mvHeaderRow, ...mvDataRows, mvTotalRow],
+        },
+        layout: 'lightHorizontalLines',
+      });
+    }
+
+    const generadoEn = fecha.ahoraEnMexico().format('DD/MM/YYYY HH:mm');
+    content.push({
+      text: `Generado el ${generadoEn}`,
+      fontSize: 7,
+      color: '#888',
+      alignment: 'right',
+      margin: [0, 16, 0, 0],
+    });
+
+    return {
+      pageSize: 'A4',
+      pageOrientation: pagos.length > 12 ? 'landscape' : 'portrait',
+      pageMargins: [30, 40, 30, 40],
+      content,
+      styles: {
+        resumenLabel: { fontSize: 8, color: '#555', bold: true },
+        resumenValor: { fontSize: 11, bold: true },
+        thTable: { fontSize: 8, bold: true, color: '#333' },
+        tdTable: { fontSize: 8 },
+      },
+    } as TDocumentDefinitions;
+  }
+
+  // ==================== PDF PRIVADO — REPORTE POR SERVICIO ====================
+
+  private buildReporteServicioDefinition(params: {
+    municipioNombre: string;
+    logoBase64?: string;
+    stats: any;
+  }): TDocumentDefinitions {
+    const { municipioNombre, logoBase64, stats } = params;
+    const e = stats.estadisticas;
+    const generadoEn = fecha.ahoraEnMexico().format('DD/MM/YYYY HH:mm');
+
+    const content: any[] = [];
+
+    if (logoBase64) {
+      content.push({
+        image: logoBase64,
+        width: 60,
+        alignment: 'center',
+        margin: [0, 0, 0, 6],
+      });
+    }
+    content.push({
+      text: municipioNombre.toUpperCase(),
+      fontSize: 14,
+      bold: true,
+      alignment: 'center',
+      margin: [0, 0, 0, 2],
+    });
+    content.push({
+      text: 'REPORTE POR SERVICIO',
+      fontSize: 11,
+      alignment: 'center',
+      margin: [0, 0, 0, 2],
+    });
+    content.push({
+      text: (stats.servicio?.nombre ?? '').toUpperCase(),
+      fontSize: 10,
+      bold: true,
+      color: '#333',
+      alignment: 'center',
+      margin: [0, 0, 0, 14],
+    });
+
+    // Costo base
+    content.push({
+      table: {
+        widths: ['*', '*'],
+        body: [
+          [
+            { text: 'Costo Base', style: 'resumenLabel', alignment: 'center' },
+            {
+              text: 'Total Recaudado',
+              style: 'resumenLabel',
+              alignment: 'center',
+            },
+          ],
+          [
+            {
+              text: `$${(stats.servicio?.costoBase ?? 0).toFixed(2)}`,
+              style: 'resumenValor',
+              alignment: 'center',
+            },
+            {
+              text: `$${(e?.totalRecaudado ?? 0).toFixed(2)}`,
+              style: 'resumenValor',
+              alignment: 'center',
+            },
+          ],
+        ],
+      },
+      layout: 'lightHorizontalLines',
+      margin: [0, 0, 0, 16],
+    });
+
+    // Tabla de estadísticas
+    content.push({
+      text: 'ESTADÍSTICAS HISTÓRICAS',
+      fontSize: 10,
+      bold: true,
+      margin: [0, 0, 0, 6],
+    });
+
+    const rows = [
+      ['Total de órdenes generadas', `${e?.totalOrdenes ?? 0}`],
+      ['Órdenes pagadas', `${e?.ordenesPagadas ?? 0}`],
+      ['Órdenes pendientes', `${e?.ordenesPendientes ?? 0}`],
+      ['Órdenes expiradas', `${e?.ordenesExpiradas ?? 0}`],
+      [
+        'Recaudado en línea (Stripe)',
+        `$${(e?.recaudadoEnLinea ?? 0).toFixed(2)}`,
+      ],
+      ['Recaudado en caja', `$${(e?.recaudadoCaja ?? 0).toFixed(2)}`],
+    ];
+
+    content.push({
+      table: {
+        headerRows: 0,
+        widths: ['*', 'auto'],
+        body: rows.map(([label, val]) => [
+          { text: label, style: 'tdTable' },
+          {
+            text: val,
+            style: 'tdTable',
+            alignment: 'right',
+            bold: label.startsWith('Recaudado'),
+          },
+        ]),
+      },
+      layout: 'lightHorizontalLines',
+    });
+
+    content.push({
+      text: `Generado el ${generadoEn}`,
+      fontSize: 7,
+      color: '#888',
+      alignment: 'right',
+      margin: [0, 16, 0, 0],
+    });
+
+    return {
+      pageSize: 'A4',
+      pageMargins: [30, 40, 30, 40],
+      content,
+      styles: {
+        resumenLabel: { fontSize: 8, color: '#555', bold: true },
+        resumenValor: { fontSize: 11, bold: true },
+        tdTable: { fontSize: 9 },
       },
     } as TDocumentDefinitions;
   }

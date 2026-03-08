@@ -3,98 +3,96 @@ import { StyleDictionary } from 'pdfmake/interfaces';
 export const estilosDIF: StyleDictionary = {
   // ── Encabezados ────────────────────────────────────────────────────
   titulo: {
-    fontSize: 18,
+    fontSize: 14,
     bold: true,
-    color: '#0F2A44',
-    margin: [0, 0, 0, 4],
+    color: '#333',
+    margin: [0, 0, 0, 2],
   },
   subtitulo: {
-    fontSize: 12,
+    fontSize: 10,
     bold: true,
-    color: '#0F2A44',
-    margin: [0, 8, 0, 4],
+    color: '#333',
+    margin: [0, 0, 0, 6],
   },
   seccion: {
-    fontSize: 11,
+    fontSize: 10,
     bold: true,
-    color: '#ffffff',
-    fillColor: '#0F2A44',
-    margin: [4, 6, 4, 6],
+    color: '#333',
+    margin: [0, 8, 0, 4],
   },
 
   // ── Texto general ──────────────────────────────────────────────────
   texto: {
-    fontSize: 9,
-    color: '#212121',
+    fontSize: 8,
+    color: '#333',
   },
   textoSmall: {
     fontSize: 8,
-    color: '#424242',
+    color: '#555',
   },
   label: {
-    fontSize: 9,
+    fontSize: 8,
     bold: true,
-    color: '#424242',
+    color: '#555',
   },
   valor: {
-    fontSize: 9,
-    color: '#212121',
+    fontSize: 8,
+    color: '#333',
   },
 
   // ── Tablas ─────────────────────────────────────────────────────────
   tableHeader: {
-    fontSize: 9,
+    fontSize: 8,
     bold: true,
-    color: '#212121',
+    color: '#333',
     alignment: 'left',
-    margin: [4, 4, 4, 4],
+    margin: [4, 3, 4, 3],
   },
   tableHeaderLight: {
-    fontSize: 9,
+    fontSize: 8,
     bold: true,
-    color: '#212121',
-    fillColor: '#e8eaf6',
+    color: '#333',
     alignment: 'left',
     margin: [4, 3, 4, 3],
   },
   tableCell: {
-    fontSize: 9,
-    color: '#212121',
+    fontSize: 8,
+    color: '#333',
     margin: [4, 3, 4, 3],
   },
   tableCellCenter: {
-    fontSize: 9,
-    color: '#212121',
+    fontSize: 8,
+    color: '#333',
     alignment: 'center',
     margin: [4, 3, 4, 3],
   },
   tableCellMuted: {
     fontSize: 8,
-    color: '#757575',
+    color: '#555',
     margin: [4, 3, 4, 3],
   },
 
   // ── Tarjetas / KPIs ────────────────────────────────────────────────
   kpiValor: {
-    fontSize: 22,
+    fontSize: 11,
     bold: true,
-    color: '#0F2A44',
+    color: '#333',
     alignment: 'center',
   },
   kpiLabel: {
     fontSize: 8,
-    color: '#616161',
+    bold: true,
+    color: '#555',
     alignment: 'center',
   },
 
   // ── Pie de página / encabezado ─────────────────────────────────────
   headerText: {
     fontSize: 8,
-    color: '#757575',
+    color: '#555',
   },
   footerText: {
     fontSize: 7,
-    color: '#9e9e9e',
-    italics: true,
+    color: '#888',
   },
 };

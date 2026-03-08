@@ -59,11 +59,21 @@ export class AuthService {
   }
 
   async login(user: any): Promise<TokenResponse> {
+    // Resolver nombre del módulo si el usuario tiene uno asignado
+    let moduloNombre: string | null = null;
+    if (user.moduloId) {
+      const modulo = await this.moduloModel
+        .findById(user.moduloId, 'nombre')
+        .lean();
+      moduloNombre = (modulo as any)?.nombre ?? null;
+    }
+
     const payload: JwtPayload = {
       email: user.email,
       sub: user._id.toString(),
       municipioId: user.municipioId ? user.municipioId.toString() : null,
       rol: user.rol,
+      moduloNombre,
     };
 
     const accessToken = this.jwtService.sign(payload as any);

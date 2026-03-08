@@ -5,6 +5,7 @@ export interface JwtPayload {
   email: string;
   municipioId: string | null;
   rol: string;
+  moduloNombre?: string | null; // Nombre del módulo asignado (solo OPERATIVO) — usado para join:area en WS
   iat?: number;
   exp?: number;
 }
@@ -62,6 +63,7 @@ export interface MunicipalityConfig {
     USUARIOS?: boolean;
     REPORTES?: boolean;
     CITAS?: boolean;
+    REGISTRO_CIVIL?: boolean;
   };
   stripe?: {
     accountId: string;

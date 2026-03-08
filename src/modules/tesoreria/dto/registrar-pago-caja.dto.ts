@@ -44,4 +44,22 @@ export class RegistrarPagoCajaDto {
   @IsOptional()
   @IsString()
   referenciaDocumento?: string;
+
+  @ApiPropertyOptional({
+    description:
+      'ID de la orden interna generada por el departamento (Registro Civil, Secretaría, etc.). Al proveerlo, la orden se marca automáticamente como PAGADA.',
+    example: '67c9f1a2ab3cd4ef56789012',
+  })
+  @IsOptional()
+  @IsMongoId()
+  ordenInternaId?: string;
+
+  @ApiPropertyOptional({
+    description:
+      'Nombre del contribuyente cuando no está registrado en el sistema. Se imprime en el recibo.',
+    example: 'Juan López García',
+  })
+  @IsOptional()
+  @IsString()
+  nombreContribuyente?: string;
 }

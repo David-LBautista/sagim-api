@@ -119,7 +119,7 @@ export class DifReportesService {
 
     // 2. Ensamblar documento pdfmake
     const docDefinition: TDocumentDefinitions = {
-      pageSize: 'LETTER',
+      pageSize: 'A4',
       pageOrientation: [
         'fondos',
         'inventario',
@@ -128,7 +128,7 @@ export class DifReportesService {
       ].includes(tipo)
         ? 'landscape'
         : 'portrait',
-      pageMargins: [40, 80, 40, 50],
+      pageMargins: [30, 145, 30, 40],
       header: {
         margin: [40, 16, 40, 0],
         stack: buildHeader({
@@ -137,7 +137,7 @@ export class DifReportesService {
           tipoReporte: tituloReporte,
           fechaInicio: filtros.fechaInicio,
           fechaFin: filtros.fechaFin,
-          generadoEn: new Date(),
+          generadoEn: fecha.ahoraEnMexico().toDate(),
           orientacion: [
             'fondos',
             'inventario',
@@ -155,18 +155,6 @@ export class DifReportesService {
         fontSize: 9,
       },
       content: [
-        {
-          text: tituloReporte,
-          style: 'titulo',
-          alignment: 'center',
-          margin: [0, 12, 0, 2],
-        },
-        {
-          text: `Período: ${filtros.fechaInicio} — ${filtros.fechaFin}`,
-          style: 'textoSmall',
-          alignment: 'center',
-          margin: [0, 0, 0, 14],
-        },
         ...content,
       ],
     };
@@ -177,7 +165,7 @@ export class DifReportesService {
     // 4. Subir a S3: municipios/{municipioId}/reportes/dif/{tipo}/RPT-{tipo}-{YYYYMM}-{ts}.pdf
     const periodo = filtros.fechaInicio
       ? filtros.fechaInicio.substring(0, 7).replace('-', '')
-      : new Date().toISOString().substring(0, 7).replace('-', '');
+      : fecha.ahoraEnMexico().format('YYYYMM');
     const key = S3Service.keyReporteDif(municipioId, tipo, periodo);
 
     // 5. Subir a S3 y generar URL firmada

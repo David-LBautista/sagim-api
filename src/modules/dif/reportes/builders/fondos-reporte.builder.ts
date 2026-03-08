@@ -43,54 +43,43 @@ export function buildFondosReporte(data: FondosReporteData): Content[] {
     });
   }
 
-  // ── KPIs financieros ───────────────────────────────────────────────
-  content.push({
-    table: {
-      widths: ['*', '*', '*', '*'],
-      body: [
-        [
-          kpiMoneda(resumen.ingresadoTotal, 'Total ingresado'),
-          kpiMoneda(resumen.utilizadoTotal, 'Total utilizado'),
-          kpiMoneda(resumen.disponibleTotal, 'Disponible total'),
-          kpiCard(`${resumen.porcentajeGlobal}%`, 'Utilización global'),
-        ],
-      ],
-    },
-    layout: 'noBorders',
-    margin: [0, 0, 0, 12],
-  });
-
-  // ── Balance del mes ───────────────────────────────────────────────
+  // ── Resumen financiero en tabla ─────────────────────────────────────
   const balanceColor = resumen.balanceMes >= 0 ? '#2e7d32' : '#c62828';
   content.push({
     table: {
-      widths: ['*'],
+      widths: ['*', '*', '*', '*', '*'],
       body: [
         [
+          { text: 'Total ingresado', style: 'tableHeader' },
+          { text: 'Total utilizado', style: 'tableHeader' },
+          { text: 'Disponible total', style: 'tableHeader' },
+          { text: 'Utilización global', style: 'tableHeader' },
+          { text: 'Balance del período', style: 'tableHeader' },
+        ],
+        [
           {
-            stack: [
-              {
-                text: 'Balance del período',
-                fontSize: 9,
-                bold: true,
-                color: '#424242',
-                alignment: 'center',
-              },
-              {
-                text: `${resumen.balanceMes >= 0 ? '+' : ''}$${resumen.balanceMes.toLocaleString('es-MX', { minimumFractionDigits: 2 })}`,
-                fontSize: 18,
-                bold: true,
-                color: balanceColor,
-                alignment: 'center',
-              },
-            ],
-            margin: [0, 8, 0, 8],
-            border: [true, true, true, true],
+            text: `$${resumen.ingresadoTotal.toLocaleString('es-MX', { minimumFractionDigits: 2 })}`,
+            style: 'tableCellCenter',
+          },
+          {
+            text: `$${resumen.utilizadoTotal.toLocaleString('es-MX', { minimumFractionDigits: 2 })}`,
+            style: 'tableCellCenter',
+          },
+          {
+            text: `$${resumen.disponibleTotal.toLocaleString('es-MX', { minimumFractionDigits: 2 })}`,
+            style: 'tableCellCenter',
+          },
+          { text: `${resumen.porcentajeGlobal}%`, style: 'tableCellCenter' },
+          {
+            text: `${resumen.balanceMes >= 0 ? '+' : ''}$${resumen.balanceMes.toLocaleString('es-MX', { minimumFractionDigits: 2 })}`,
+            style: 'tableCellCenter',
+            bold: true,
+            color: balanceColor,
           },
         ],
       ],
     },
-    layout: 'noBorders',
+    layout: 'lightHorizontalLines',
     margin: [0, 0, 0, 16],
   });
 
@@ -210,23 +199,6 @@ export function buildFondosReporte(data: FondosReporteData): Content[] {
   });
 
   return content;
-}
-
-function kpiCard(valor: string, etiqueta: string): any {
-  return {
-    stack: [
-      { text: valor, style: 'kpiValor' },
-      { text: etiqueta, style: 'kpiLabel' },
-    ],
-    margin: [8, 8, 8, 8],
-  };
-}
-
-function kpiMoneda(valor: number, etiqueta: string): any {
-  return kpiCard(
-    `$${valor.toLocaleString('es-MX', { minimumFractionDigits: 2 })}`,
-    etiqueta,
-  );
 }
 
 function formatMoneda(valor: number): string {

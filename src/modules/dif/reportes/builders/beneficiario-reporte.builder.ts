@@ -55,24 +55,27 @@ export function buildBeneficiarioReporte(
     });
   }
 
-  // ── KPIs ──────────────────────────────────────────────────────────
+  // ── Resumen en tabla ──────────────────────────────────────────────
   content.push({
     table: {
       widths: ['*', '*', '*', '*'],
       body: [
         [
-          kpiCard(resumen.total.toString(), 'Total registrados'),
-          kpiCard(resumen.activos.toString(), 'Activos'),
-          kpiCard(resumen.conApoyos.toString(), 'Con apoyos'),
-          kpiCard(
-            resumen.localidadesUnicas.toString(),
-            'Localidades atendidas',
-          ),
+          { text: 'Total registrados', style: 'tableHeader' },
+          { text: 'Activos', style: 'tableHeader' },
+          { text: 'Con apoyos', style: 'tableHeader' },
+          { text: 'Localidades atendidas', style: 'tableHeader' },
+        ],
+        [
+          { text: resumen.total.toString(), style: 'tableCellCenter' },
+          { text: resumen.activos.toString(), style: 'tableCellCenter' },
+          { text: resumen.conApoyos.toString(), style: 'tableCellCenter' },
+          { text: resumen.localidadesUnicas.toString(), style: 'tableCellCenter' },
         ],
       ],
     },
-    layout: 'noBorders',
-    margin: [0, 0, 0, 12],
+    layout: 'lightHorizontalLines',
+    margin: [0, 0, 0, 16],
   });
 
   // ── Grupos vulnerables ────────────────────────────────────────────
@@ -156,16 +159,6 @@ export function buildBeneficiarioReporte(
   });
 
   return content;
-}
-
-function kpiCard(valor: string, etiqueta: string): any {
-  return {
-    stack: [
-      { text: valor, style: 'kpiValor' },
-      { text: etiqueta, style: 'kpiLabel' },
-    ],
-    margin: [8, 8, 8, 8],
-  };
 }
 
 function formatDate(fecha: Date | string): string {

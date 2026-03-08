@@ -26,6 +26,10 @@ export class PagoCaja {
   @Prop({ type: Types.ObjectId, ref: 'Ciudadano', default: null })
   ciudadanoId: Types.ObjectId | null;
 
+  // Nombre libre del contribuyente cuando no está registrado en el sistema
+  @Prop({ default: null })
+  nombreContribuyente: string | null;
+
   // ==================== MONTO Y DESGLOSE FISCAL ====================
   @Prop({ required: true, min: 0 })
   monto: number; // Total cobrado al ciudadano

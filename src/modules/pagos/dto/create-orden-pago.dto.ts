@@ -7,7 +7,7 @@ import {
   Min,
   Max,
 } from 'class-validator';
-import { ApiProperty } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 export class CreateOrdenPagoDto {
   @ApiProperty({
@@ -71,4 +71,22 @@ export class CreateOrdenPagoDto {
   @Min(1)
   @Max(72)
   horasValidez?: number; // Default 48 horas
+
+  @ApiPropertyOptional({
+    description:
+      'Nombre del contribuyente cuando no está registrado en el sistema. Se imprime en el recibo.',
+    example: 'Juan López García',
+  })
+  @IsOptional()
+  @IsString()
+  nombreContribuyente?: string;
+
+  @ApiPropertyOptional({
+    description:
+      'Folio o referencia del documento relacionado (ej. folio del acta, clave catastral).',
+    example: 'RC-2026-00142',
+  })
+  @IsOptional()
+  @IsString()
+  folioDocumento?: string;
 }

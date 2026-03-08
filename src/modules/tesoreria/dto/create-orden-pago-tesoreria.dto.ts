@@ -73,4 +73,13 @@ export class CreateOrdenPagoTesoreriaDto {
   @Min(1)
   @Max(72)
   horasValidez?: number;
+
+  @ApiProperty({
+    description: 'Folio del documento tramitado (acta, licencia, etc.)',
+    example: 'RC-2026-00123',
+    required: false,
+  })
+  @IsOptional()
+  @IsString()
+  folioDocumento?: string;
 }

@@ -53,26 +53,29 @@ export function buildApoyoReporte(data: ApoyoReporteData): Content[] {
     });
   }
 
-  // ── Tarjetas KPI ──────────────────────────────────────────────────
+  // ── Resumen en tabla ──────────────────────────────────────────────
   content.push({
     table: {
       widths: ['*', '*', '*', '*'],
       body: [
         [
-          kpiCard(resumen.totalApoyos.toString(), 'Total apoyos otorgados'),
-          kpiCard(
-            `$${resumen.totalMonto.toLocaleString('es-MX', { minimumFractionDigits: 2 })}`,
-            'Monto total entregado',
-          ),
-          kpiCard(resumen.apoyosMes.toString(), 'Apoyos este mes'),
-          kpiCard(
-            resumen.totalBeneficiarios.toString(),
-            'Beneficiarios atendidos',
-          ),
+          { text: 'Total apoyos otorgados', style: 'tableHeader' },
+          { text: 'Monto total entregado', style: 'tableHeader' },
+          { text: 'Apoyos este mes', style: 'tableHeader' },
+          { text: 'Beneficiarios atendidos', style: 'tableHeader' },
+        ],
+        [
+          { text: resumen.totalApoyos.toString(), style: 'tableCellCenter' },
+          {
+            text: `$${resumen.totalMonto.toLocaleString('es-MX', { minimumFractionDigits: 2 })}`,
+            style: 'tableCellCenter',
+          },
+          { text: resumen.apoyosMes.toString(), style: 'tableCellCenter' },
+          { text: resumen.totalBeneficiarios.toString(), style: 'tableCellCenter' },
         ],
       ],
     },
-    layout: 'noBorders',
+    layout: 'lightHorizontalLines',
     margin: [0, 0, 0, 16],
   });
 
@@ -134,17 +137,6 @@ export function buildApoyoReporte(data: ApoyoReporteData): Content[] {
   });
 
   return content;
-}
-
-// ── Helpers ───────────────────────────────────────────────────────────
-function kpiCard(valor: string, etiqueta: string): any {
-  return {
-    stack: [
-      { text: valor, style: 'kpiValor' },
-      { text: etiqueta, style: 'kpiLabel' },
-    ],
-    margin: [8, 8, 8, 8],
-  };
 }
 
 function formatDate(fecha: Date | string): string {

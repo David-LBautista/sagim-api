@@ -37,6 +37,7 @@ import { PdfService } from '../shared/pdf/pdf.service';
 import { TDocumentDefinitions } from 'pdfmake/interfaces';
 import Stripe from 'stripe';
 import { randomUUID } from 'crypto';
+import { fecha } from '@/common/helpers/fecha.helper';
 
 @Injectable()
 export class PagosService {
@@ -270,8 +271,10 @@ export class PagosService {
 
     // Calcular fecha de expiración (default 48 horas)
     const horasValidez = createOrdenPagoDto.horasValidez || 48;
-    const expiresAt = new Date();
-    expiresAt.setHours(expiresAt.getHours() + horasValidez);
+    const expiresAt = fecha.agregarHoras(
+      fecha.ahoraEnMexico().toDate(),
+      horasValidez,
+    );
 
     // Si tiene servicioId, usar categoria del servicio como areaResponsable canónica
     let areaResponsable = createOrdenPagoDto.areaResponsable;
@@ -302,6 +305,8 @@ export class PagosService {
       creadaPorId: new Types.ObjectId(userId),
       expiresAt,
       estado: OrdenPagoStatus.PENDIENTE,
+      nombreContribuyente: createOrdenPagoDto.nombreContribuyente,
+      folioDocumento: createOrdenPagoDto.folioDocumento,
       metadata: { emailCiudadano: createOrdenPagoDto.emailCiudadano },
     });
 

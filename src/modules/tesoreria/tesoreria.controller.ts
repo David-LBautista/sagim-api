@@ -15,6 +15,8 @@ import { TesoreriaService } from './tesoreria.service';
 import {
   CreateServicioCobroDto,
   CreateOrdenPagoTesoreriaDto,
+  CreateOrdenInternaDto,
+  CobrarOrdenInternaDto,
   UpsertServicioOverrideDto,
   RegistrarPagoCajaDto,
 } from './dto';
@@ -343,6 +345,93 @@ export class TesoreriaController {
     return this.tesoreriaService.findPagoById(id, scope);
   }
 
+  // ==================== ÓRDENES INTERNAS ====================
+
+  @Post('ordenes-internas')
+  @Roles(UserRole.SUPER_ADMIN, UserRole.ADMIN_MUNICIPIO, UserRole.OPERATIVO)
+  @ApiOperation({
+    summary: 'Crear orden interna de pago (departamento → caja presencial)',
+  })
+  crearOrdenInterna(
+    @Body() dto: CreateOrdenInternaDto,
+    @MunicipalityId() municipioId: string,
+    @Req() req: Request,
+  ) {
+    const userId = (req.user as any).sub;
+    return this.tesoreriaService.crearOrdenInterna(dto, municipioId, userId);
+  }
+
+  @Get('ordenes-internas')
+  @Roles(UserRole.SUPER_ADMIN, UserRole.ADMIN_MUNICIPIO, UserRole.OPERATIVO)
+  @ApiOperation({ summary: 'Listar órdenes internas con filtros' })
+  @ApiQuery({ name: 'estado', required: false })
+  @ApiQuery({
+    name: 'ciudadanoId',
+    required: false,
+    description: 'Filtrar por ID de ciudadano registrado',
+  })
+  @ApiQuery({ name: 'areaResponsable', required: false })
+  @ApiQuery({ name: 'fechaDesde', required: false })
+  @ApiQuery({ name: 'fechaHasta', required: false })
+  @ApiQuery({
+    name: 'busqueda',
+    required: false,
+    description:
+      'Buscar por folio, descripción, área o nombre del contribuyente',
+  })
+  findOrdenesInternas(
+    @TenantScope() scope: any,
+    @Query('estado') estado?: string,
+    @Query('ciudadanoId') ciudadanoId?: string,
+    @Query('areaResponsable') areaResponsable?: string,
+    @Query('fechaDesde') fechaDesde?: string,
+    @Query('fechaHasta') fechaHasta?: string,
+    @Query('busqueda') busqueda?: string,
+  ) {
+    const filters: any = {};
+    if (estado) filters.estado = estado;
+    if (ciudadanoId) filters.ciudadanoId = ciudadanoId;
+    if (areaResponsable) filters.areaResponsable = areaResponsable;
+    if (fechaDesde) filters.fechaDesde = new Date(fechaDesde);
+    if (fechaHasta) filters.fechaHasta = new Date(fechaHasta);
+    if (busqueda) filters.busqueda = busqueda;
+    return this.tesoreriaService.findOrdenesInternas(scope, filters);
+  }
+
+  @Post('ordenes-internas/:id/cobrar')
+  @Roles(UserRole.SUPER_ADMIN, UserRole.ADMIN_MUNICIPIO, UserRole.OPERATIVO)
+  @ApiOperation({
+    summary:
+      'Cobrar una orden interna en caja (Modo 2 — cajero selecciona orden existente)',
+  })
+  @ApiParam({ name: 'id', description: 'ID de la orden interna' })
+  cobrarOrdenInterna(
+    @Param('id') id: string,
+    @Body() dto: CobrarOrdenInternaDto,
+    @MunicipalityId() municipioId: string,
+    @CurrentUser() user: any,
+  ) {
+    const cajeroNombre =
+      [user.nombre, user.apellido].filter(Boolean).join(' ') || user.email;
+    return this.tesoreriaService.cobrarOrdenInterna(
+      id,
+      dto,
+      municipioId,
+      user.sub,
+      cajeroNombre,
+    );
+  }
+
+  @Patch('ordenes-internas/:id/cancelar')
+  @Roles(UserRole.SUPER_ADMIN, UserRole.ADMIN_MUNICIPIO, UserRole.OPERATIVO)
+  @ApiOperation({ summary: 'Cancelar orden interna (solo si está PENDIENTE)' })
+  cancelarOrdenInterna(
+    @Param('id') id: string,
+    @MunicipalityId() municipioId: string,
+  ) {
+    return this.tesoreriaService.cancelarOrden(id, municipioId);
+  }
+
   // ==================== REPORTES ====================
 
   @Get('reportes/diario/pdf')
@@ -396,16 +485,55 @@ export class TesoreriaController {
   @ApiOperation({ summary: 'Reporte de ingresos del mes' })
   @ApiQuery({ name: 'mes', required: true, description: 'Mes (1-12)' })
   @ApiQuery({ name: 'año', required: true, description: 'Año (YYYY)' })
+  @ApiQuery({
+    name: 'detalle',
+    required: false,
+    type: Boolean,
+    description: 'true = incluye array de pagos individuales del mes',
+  })
   reporteMensual(
     @TenantScope() scope: any,
     @Query('mes') mes: string,
     @Query('año') año: string,
+    @Query('detalle') detalle?: string,
   ) {
     return this.tesoreriaService.reporteMensual(
       scope,
       parseInt(mes),
       parseInt(año),
+      detalle === 'true',
     );
+  }
+
+  @Get('reportes/mensual/pdf')
+  @Roles(UserRole.SUPER_ADMIN, UserRole.ADMIN_MUNICIPIO, UserRole.OPERATIVO)
+  @ApiOperation({
+    summary: 'Generar PDF de reporte mensual y obtener URL firmada de S3',
+  })
+  @ApiQuery({ name: 'mes', required: true, description: 'Mes (1-12)' })
+  @ApiQuery({ name: 'año', required: true, description: 'Año (YYYY)' })
+  generarCorteMensualPdf(
+    @TenantScope() scope: any,
+    @Query('mes') mes: string,
+    @Query('año') año: string,
+  ) {
+    return this.tesoreriaService.generarCorteMensualPdf(
+      scope,
+      parseInt(mes),
+      parseInt(año),
+    );
+  }
+
+  @Get('reportes/servicio/:servicioId/pdf')
+  @Roles(UserRole.SUPER_ADMIN, UserRole.ADMIN_MUNICIPIO, UserRole.OPERATIVO)
+  @ApiOperation({
+    summary: 'Generar PDF de reporte por servicio y obtener URL firmada de S3',
+  })
+  generarReporteServicioPdf(
+    @Param('servicioId') servicioId: string,
+    @TenantScope() scope: any,
+  ) {
+    return this.tesoreriaService.generarReporteServicioPdf(servicioId, scope);
   }
 
   @Get('reportes/servicio/:servicioId')

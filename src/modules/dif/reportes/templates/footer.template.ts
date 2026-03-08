@@ -1,18 +1,20 @@
 import { DynamicContent } from 'pdfmake/interfaces';
+import { fecha } from '@/common/helpers/fecha.helper';
 
 /**
- * Footer estándar con número de página y aviso de confidencialidad.
- * Se usa como la propiedad `footer` del TDocumentDefinitions.
+ * Footer estándar para reportes DIF.
+ * Generado el {fecha}  |  Página X de Y
  */
 export function buildFooter(): DynamicContent {
+  const generadoEn = fecha.ahoraEnMexico().format('DD/MM/YYYY HH:mm');
   return (currentPage: number, pageCount: number): any => ({
-    margin: [40, 0, 40, 0],
+    margin: [30, 6, 30, 0],
     table: {
       widths: ['*', 'auto'],
       body: [
         [
           {
-            text: 'Documento generado automáticamente por SAGIM. Uso interno y confidencial.',
+            text: `Generado el ${generadoEn} — Documento generado por SAGIM. Uso interno.`,
             style: 'footerText',
             border: [false, true, false, false],
           },

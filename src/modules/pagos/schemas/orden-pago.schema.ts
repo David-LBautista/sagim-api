@@ -9,12 +9,28 @@ export enum OrdenPagoStatus {
   CANCELADA = 'CANCELADA',
 }
 
+export enum TipoOrden {
+  EN_LINEA = 'EN_LINEA', // Stripe — link de pago
+  INTERNA = 'INTERNA', // Departamento → caja presencial
+}
+
 export type OrdenPagoDocument = OrdenPago & Document;
 
 @Schema({ collection: 'pagos_ordenes', timestamps: true })
 export class OrdenPago {
   @Prop({ required: true, unique: true, index: true })
   token: string; // UUID v4
+
+  @Prop({
+    type: String,
+    enum: TipoOrden,
+    default: TipoOrden.EN_LINEA,
+    index: true,
+  })
+  tipo: TipoOrden;
+
+  @Prop({ unique: true, sparse: true, index: true })
+  folio?: string; // Solo órdenes internas: ORD-YYYYMM-XXXX
 
   @Prop({ type: Types.ObjectId, ref: 'Municipality', required: true })
   municipioId: Types.ObjectId;
@@ -26,7 +42,10 @@ export class OrdenPago {
   predioId?: Types.ObjectId; // Solo si es pago de predial (futuro)
 
   @Prop({ type: Types.ObjectId, ref: 'Ciudadano' })
-  ciudadanoId?: Types.ObjectId; // Opcional - asociar pago a ciudadano
+  ciudadanoId?: Types.ObjectId; // Opcional - asociar pago a ciudadano registrado
+
+  @Prop()
+  nombreContribuyente?: string; // Cuando no hay ciudadano registrado en el sistema
 
   @Prop({ required: true })
   monto: number;
@@ -41,14 +60,20 @@ export class OrdenPago {
   })
   estado: OrdenPagoStatus;
 
-  @Prop({ required: true })
-  expiresAt: Date; // 24-72 horas
+  @Prop()
+  expiresAt?: Date; // 24-72 horas (solo EN_LINEA)
 
   @Prop()
   usadaAt?: Date; // Fecha en que se usó
 
   @Prop()
   descripcion?: string;
+
+  @Prop()
+  observaciones?: string;
+
+  @Prop()
+  folioDocumento?: string; // Folio del documento tramitado (ej. acta, licencia)
 
   @Prop()
   areaResponsable?: string; // Registro Civil, DIF, etc.

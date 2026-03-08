@@ -52,39 +52,35 @@ export function buildInventarioReporte(data: InventarioReporteData): Content[] {
     });
   }
 
-  // ── KPIs ──────────────────────────────────────────────────────────
+  // ── Resumen en tabla ──────────────────────────────────────────────
   content.push({
     table: {
-      widths: ['*', '*', '*', '*'],
+      widths: ['*', '*', '*', '*', '*', '*', '*'],
       body: [
         [
-          kpiCard(resumen.totalArticulos.toString(), 'Artículos en inventario'),
-          kpiCard(
-            `$${resumen.valorTotalInventario.toLocaleString('es-MX', { minimumFractionDigits: 2 })}`,
-            'Valor total ($)',
-          ),
-          kpiCard(resumen.entradasMes.toString(), 'Entradas del mes'),
-          kpiCard(resumen.salidasMes.toString(), 'Salidas del mes'),
+          { text: 'Artículos', style: 'tableHeader' },
+          { text: 'Valor total', style: 'tableHeader' },
+          { text: 'Entradas del mes', style: 'tableHeader' },
+          { text: 'Salidas del mes', style: 'tableHeader' },
+          { text: 'Stock Crítico', style: 'tableHeader' },
+          { text: 'Stock Bajo', style: 'tableHeader' },
+          { text: 'Stock Normal', style: 'tableHeader' },
+        ],
+        [
+          { text: resumen.totalArticulos.toString(), style: 'tableCellCenter' },
+          {
+            text: `$${resumen.valorTotalInventario.toLocaleString('es-MX', { minimumFractionDigits: 2 })}`,
+            style: 'tableCellCenter',
+          },
+          { text: resumen.entradasMes.toString(), style: 'tableCellCenter', color: '#2e7d32' },
+          { text: resumen.salidasMes.toString(), style: 'tableCellCenter', color: '#c62828' },
+          { text: resumen.criticos.toString(), style: 'tableCellCenter', bold: true, color: '#c62828' },
+          { text: resumen.bajos.toString(), style: 'tableCellCenter', bold: true, color: '#ef6c00' },
+          { text: resumen.normales.toString(), style: 'tableCellCenter', bold: true, color: '#2e7d32' },
         ],
       ],
     },
-    layout: 'noBorders',
-    margin: [0, 0, 0, 12],
-  });
-
-  // ── Semáforo de stock ─────────────────────────────────────────────
-  content.push({
-    table: {
-      widths: ['*', '*', '*'],
-      body: [
-        [
-          semaforo(resumen.criticos, 'Crítico', '#c62828'),
-          semaforo(resumen.bajos, 'Bajo', '#ef6c00'),
-          semaforo(resumen.normales, 'Normal', '#2e7d32'),
-        ],
-      ],
-    },
-    layout: 'noBorders',
+    layout: 'lightHorizontalLines',
     margin: [0, 0, 0, 16],
   });
 
@@ -156,35 +152,4 @@ export function buildInventarioReporte(data: InventarioReporteData): Content[] {
   });
 
   return content;
-}
-
-function kpiCard(valor: string, etiqueta: string): any {
-  return {
-    stack: [
-      { text: valor, style: 'kpiValor' },
-      { text: etiqueta, style: 'kpiLabel' },
-    ],
-    margin: [8, 8, 8, 8],
-  };
-}
-
-function semaforo(total: number, etiqueta: string, color: string): any {
-  return {
-    stack: [
-      {
-        text: total.toString(),
-        fontSize: 20,
-        bold: true,
-        color,
-        alignment: 'center',
-      },
-      {
-        text: `Stock ${etiqueta}`,
-        fontSize: 8,
-        color: '#616161',
-        alignment: 'center',
-      },
-    ],
-    margin: [8, 6, 8, 6],
-  };
 }
