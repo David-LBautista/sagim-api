@@ -41,6 +41,34 @@ export class Municipality {
   @Prop()
   direccion?: string;
 
+  @Prop({ default: false })
+  onboardingCompletado: boolean;
+
+  @Prop({
+    type: {
+      /** Paso 1 — Datos del municipio verificados (el admin presionó Continuar) */
+      datos: { type: Boolean, default: false },
+      /** Paso 2 — Catálogo de servicios revisado */
+      servicios: { type: Boolean, default: false },
+      /** Paso 3 — Al menos 1 operativo registrado y confirmó Continuar */
+      equipo: { type: Boolean, default: false },
+      /** Paso 4 — Padrón importado O saltado explícitamente (opcional) */
+      padron: { type: Boolean, default: false },
+    },
+    default: () => ({
+      datos: false,
+      servicios: false,
+      equipo: false,
+      padron: false,
+    }),
+  })
+  onboardingSteps: {
+    datos: boolean;
+    servicios: boolean;
+    equipo: boolean;
+    padron: boolean;
+  };
+
   @Prop({ type: Date })
   createdAt: Date;
 

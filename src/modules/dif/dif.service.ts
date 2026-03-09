@@ -8,6 +8,8 @@ import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types, Connection } from 'mongoose';
 import { InjectConnection } from '@nestjs/mongoose';
 import { fecha } from '@/common/helpers/fecha.helper';
+import * as XLSX from 'xlsx';
+import { CiudadanosService } from '../ciudadanos/ciudadanos.service';
 
 import {
   Beneficiario,
@@ -50,6 +52,7 @@ export class DifService {
     private movimientoInventarioModel: Model<MovimientoInventarioDocument>,
     @InjectModel(Counter.name)
     private counterModel: Model<CounterDocument>,
+    private readonly ciudadanosService: CiudadanosService,
   ) {}
 
   // ==================== UTILIDADES ====================
@@ -1534,6 +1537,227 @@ export class DifService {
         },
       },
       ultimosMovimientos,
+    };
+  }
+
+  // ==================== IMPORTAR BENEFICIARIOS ====================
+  async importarBeneficiarios(
+    municipioId: string,
+    buffer: Buffer,
+    mapeo: Record<string, string>,
+    accionDuplicados: 'ignorar' | 'actualizar' = 'ignorar',
+  ): Promise<{
+    importados: number;
+    actualizados: number;
+    ignorados: number;
+    errores: number;
+    ciudadanosCreados: number;
+    detalleErrores: { fila: number; nombre: string; error: string }[];
+  }> {
+    const workbook = XLSX.read(buffer, { type: 'buffer' });
+    const sheet = workbook.Sheets[workbook.SheetNames[0]];
+    const filas: Record<string, any>[] = XLSX.utils.sheet_to_json(sheet, {
+      defval: '',
+    });
+
+    let importados = 0;
+    let actualizados = 0;
+    let ignorados = 0;
+    let ciudadanosCreados = 0;
+    const detalleErrores: { fila: number; nombre: string; error: string }[] =
+      [];
+
+    const scope = { municipioId: new Types.ObjectId(municipioId) };
+
+    for (let i = 0; i < filas.length; i++) {
+      const fila = filas[i];
+      const filaNum = i + 2;
+
+      try {
+        // ── Mapear columnas ──
+        const curpRaw = String(
+          fila[mapeo['curp'] ?? 'CURP'] ?? '',
+        ).trim();
+        const nombre = String(
+          fila[mapeo['nombre'] ?? 'NOMBRE'] ?? '',
+        ).trim();
+        const apellidoPaterno = String(
+          fila[mapeo['apellidoPaterno'] ?? 'APELLIDO_PATERNO'] ?? '',
+        ).trim();
+        const apellidoMaterno = String(
+          fila[mapeo['apellidoMaterno'] ?? 'APELLIDO_MATERNO'] ?? '',
+        ).trim();
+        const grupoVulnerableRaw = String(
+          fila[mapeo['grupoVulnerable'] ?? 'GRUPO_VULNERABLE'] ?? '',
+        ).trim();
+
+        // Campos requeridos
+        const nombreDisplay = `${nombre} ${apellidoPaterno}`.trim() || `Fila ${filaNum}`;
+        if (!curpRaw || !nombre || !apellidoPaterno || !grupoVulnerableRaw) {
+          detalleErrores.push({
+            fila: filaNum,
+            nombre: nombreDisplay,
+            error:
+              'Campos requeridos faltantes (curp, nombre, apellidoPaterno, grupoVulnerable)',
+          });
+          continue;
+        }
+
+        const curp = curpRaw.toUpperCase();
+        const curpRegex = /^[A-Z]{4}\d{6}[HM][A-Z]{5}[0-9A-Z]\d$/;
+        if (!curpRegex.test(curp)) {
+          detalleErrores.push({
+            fila: filaNum,
+            nombre: nombreDisplay,
+            error: `CURP inválida: ${curp}`,
+          });
+          continue;
+        }
+
+        // ── Campos opcionales ──
+        const telefono = String(
+          fila[mapeo['telefono'] ?? 'TELEFONO'] ?? '',
+        )
+          .replace(/\s+/g, '')
+          .trim();
+        const email = String(fila[mapeo['email'] ?? 'EMAIL'] ?? '')
+          .trim()
+          .toLowerCase();
+        const fechaNacRaw =
+          fila[mapeo['fechaNacimiento'] ?? 'FECHA_NACIMIENTO'];
+        const localidad = String(
+          fila[mapeo['localidad'] ?? 'LOCALIDAD'] ?? '',
+        ).trim();
+        const domicilio = String(
+          fila[mapeo['domicilio'] ?? 'DOMICILIO'] ?? '',
+        ).trim();
+        const observaciones = String(
+          fila[mapeo['observaciones'] ?? 'OBSERVACIONES'] ?? '',
+        ).trim();
+        const sexoRaw = String(fila[mapeo['sexo'] ?? 'SEXO'] ?? '')
+          .trim()
+          .toUpperCase();
+
+        // Validar teléfono y email
+        if (telefono && !/^\d{10}$/.test(telefono)) {
+          detalleErrores.push({
+            fila: filaNum,
+            nombre: nombreDisplay,
+            error: `Teléfono inválido: "${telefono}" (debe tener exactamente 10 dígitos)`,
+          });
+          continue;
+        }
+        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
+        if (email && !emailRegex.test(email)) {
+          detalleErrores.push({
+            fila: filaNum,
+            nombre: nombreDisplay,
+            error: `Email inválido: "${email}"`,
+          });
+          continue;
+        }
+
+        const grupoVulnerable = grupoVulnerableRaw
+          .split(',')
+          .map((g) => g.trim())
+          .filter(Boolean);
+
+        // ── PASO 1: Crear ciudadano si no existe ──
+        let ciudadanoExiste = true;
+        try {
+          await this.ciudadanosService.findByCurp(curp, scope);
+        } catch {
+          ciudadanoExiste = false;
+        }
+
+        if (!ciudadanoExiste) {
+          const ciudadanoData: any = {
+            curp,
+            nombre,
+            apellidoPaterno,
+            ...(apellidoMaterno && { apellidoMaterno }),
+            ...(telefono && { telefono }),
+            ...(email && { email }),
+            ...(localidad && { direccion: { localidad } }),
+          };
+          if (fechaNacRaw) {
+            const d = new Date(fechaNacRaw);
+            if (!isNaN(d.getTime()))
+              ciudadanoData.fechaNacimiento = d.toISOString().split('T')[0];
+          }
+          await this.ciudadanosService.create(ciudadanoData, municipioId);
+          ciudadanosCreados++;
+        }
+
+        // ── PASO 2: Crear o actualizar beneficiario ──
+        const beneficiarioExistente = await this.beneficiarioModel.findOne({
+          curp,
+          municipioId: new Types.ObjectId(municipioId),
+        });
+
+        if (beneficiarioExistente) {
+          if (accionDuplicados === 'actualizar') {
+            const updateData: any = { nombre, apellidoPaterno, grupoVulnerable };
+            if (apellidoMaterno) updateData.apellidoMaterno = apellidoMaterno;
+            if (telefono) updateData.telefono = telefono;
+            if (email) updateData.email = email;
+            if (localidad) updateData.localidad = localidad;
+            if (domicilio) updateData.domicilio = domicilio;
+            if (observaciones) updateData.observaciones = observaciones;
+            if (sexoRaw && /^[MF]$/.test(sexoRaw)) updateData.sexo = sexoRaw;
+            if (fechaNacRaw) {
+              const d = new Date(fechaNacRaw);
+              if (!isNaN(d.getTime())) updateData.fechaNacimiento = d;
+            }
+            await this.beneficiarioModel.findByIdAndUpdate(
+              beneficiarioExistente._id,
+              { $set: updateData },
+            );
+            actualizados++;
+          } else {
+            ignorados++;
+          }
+        } else {
+          const docData: any = {
+            curp,
+            nombre,
+            apellidoPaterno,
+            municipioId: new Types.ObjectId(municipioId),
+            grupoVulnerable,
+            activo: true,
+            fechaRegistro: new Date(),
+          };
+          if (apellidoMaterno) docData.apellidoMaterno = apellidoMaterno;
+          if (telefono) docData.telefono = telefono;
+          if (email) docData.email = email;
+          if (localidad) docData.localidad = localidad;
+          if (domicilio) docData.domicilio = domicilio;
+          if (observaciones) docData.observaciones = observaciones;
+          if (sexoRaw && /^[MF]$/.test(sexoRaw)) docData.sexo = sexoRaw;
+          if (fechaNacRaw) {
+            const d = new Date(fechaNacRaw);
+            if (!isNaN(d.getTime())) docData.fechaNacimiento = d;
+          }
+          docData.folio = await this.generateFolioBeneficiario(municipioId);
+          await this.beneficiarioModel.create(docData);
+          importados++;
+        }
+      } catch (err: any) {
+        detalleErrores.push({
+          fila: filaNum,
+          nombre: `Fila ${filaNum}`,
+          error: err?.message ?? 'Error desconocido',
+        });
+      }
+    }
+
+    return {
+      importados,
+      actualizados,
+      ignorados,
+      errores: detalleErrores.length,
+      ciudadanosCreados,
+      detalleErrores,
     };
   }
 }

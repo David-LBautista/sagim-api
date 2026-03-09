@@ -72,6 +72,7 @@ export async function seedModulos(app?: any) {
         descripcion: 'Módulo de Reportes Ciudadanos (Sistema 311)',
       },
       { nombre: 'CITAS', descripcion: 'Módulo de Gestión de Citas' },
+      { nombre: 'REGISTRO_CIVIL', descripcion: 'Módulo de Registro Civil' },
     ];
 
     let insertados = 0;

@@ -361,6 +361,13 @@ export async function seedMunicipiosVeracruz(appContext?: any) {
           $setOnInsert: {
             config: configBase,
             activo: true,
+            onboardingCompletado: false,
+            onboardingSteps: {
+              datos: false,
+              servicios: false,
+              equipo: false,
+              padron: false,
+            },
           },
           $set: {
             nombre: municipio.nombre,

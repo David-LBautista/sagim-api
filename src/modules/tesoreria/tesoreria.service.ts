@@ -92,7 +92,8 @@ export class TesoreriaService {
 
     let merged = globales
       .map((global) => ({
-        ...(overrideMap.get(global.clave) ?? global),
+        ...global, // base: todos los campos del global
+        ...(overrideMap.get(global.clave) ?? {}), // override solo sobreescribe lo que tiene
         esPersonalizado: overrideMap.has(global.clave),
       }))
       .filter((s) => s.activo)

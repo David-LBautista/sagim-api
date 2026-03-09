@@ -163,4 +163,99 @@ export class MunicipalitiesController {
   ) {
     return this.municipalitiesService.updateConfig(id, updateConfigDto);
   }
+
+  // ─────────────────────────────────────────────────────
+  // ONBOARDING
+  // ─────────────────────────────────────────────────────
+
+  @Get(':id/onboarding')
+  @Roles(UserRole.SUPER_ADMIN, UserRole.ADMIN_MUNICIPIO)
+  @ApiOperation({
+    summary:
+      'Obtener estado del onboarding (pasos completados y datos del municipio)',
+  })
+  @ApiResponse({ status: 200, description: 'Estado del onboarding' })
+  @ApiResponse({ status: 404, description: 'Municipio no encontrado' })
+  async getOnboarding(@Param('id') id: string) {
+    return this.municipalitiesService.getOnboarding(id);
+  }
+
+  @Patch(':id/onboarding/datos')
+  @Roles(UserRole.SUPER_ADMIN, UserRole.ADMIN_MUNICIPIO)
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Paso 1 — Admin verificó los datos del municipio y continuó',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Paso datos marcado como completado',
+  })
+  @ApiResponse({ status: 404, description: 'Municipio no encontrado' })
+  async completeOnboardingDatos(@Param('id') id: string) {
+    return this.municipalitiesService.completeOnboardingDatos(id);
+  }
+
+  @Patch(':id/onboarding/servicios')
+  @Roles(UserRole.SUPER_ADMIN, UserRole.ADMIN_MUNICIPIO)
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Paso 2 — Admin revisó el catálogo de servicios y continuó',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Paso servicios marcado como completado',
+  })
+  @ApiResponse({ status: 404, description: 'Municipio no encontrado' })
+  async completeOnboardingServicios(@Param('id') id: string) {
+    return this.municipalitiesService.completeOnboardingServicios(id);
+  }
+
+  @Patch(':id/onboarding/equipo')
+  @Roles(UserRole.SUPER_ADMIN, UserRole.ADMIN_MUNICIPIO)
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary:
+      'Paso 3 — Valida ≥1 operador activo y marca el paso como completado',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Paso equipo marcado como completado',
+  })
+  @ApiResponse({ status: 400, description: 'Sin operadores registrados' })
+  @ApiResponse({ status: 404, description: 'Municipio no encontrado' })
+  async completeOnboardingEquipo(@Param('id') id: string) {
+    return this.municipalitiesService.completeOnboardingEquipo(id);
+  }
+
+  @Patch(':id/onboarding/padron')
+  @Roles(UserRole.SUPER_ADMIN, UserRole.ADMIN_MUNICIPIO)
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Paso 4 — Importó padrón o lo saltó (paso opcional)',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Paso padrón marcado como completado',
+  })
+  @ApiResponse({ status: 404, description: 'Municipio no encontrado' })
+  async completeOnboardingPadron(
+    @Param('id') id: string,
+    @Body('saltado') saltado?: boolean,
+  ) {
+    return this.municipalitiesService.completeOnboardingPadron(id, saltado);
+  }
+
+  @Patch(':id/onboarding/completar')
+  @Roles(UserRole.SUPER_ADMIN, UserRole.ADMIN_MUNICIPIO)
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary:
+      'Paso final — Valida pasos requeridos y marca el municipio como activo en el sistema',
+  })
+  @ApiResponse({ status: 200, description: 'Onboarding completado' })
+  @ApiResponse({ status: 400, description: 'Pasos requeridos sin completar' })
+  @ApiResponse({ status: 404, description: 'Municipio no encontrado' })
+  async completarOnboarding(@Param('id') id: string) {
+    return this.municipalitiesService.completarOnboarding(id);
+  }
 }

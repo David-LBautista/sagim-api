@@ -4,6 +4,7 @@ import {
   IsNotEmpty,
   IsOptional,
   IsEmail,
+  IsDateString,
   Matches,
   Length,
   ValidateNested,
@@ -80,6 +81,15 @@ export class CreateCiudadanoDto {
   @IsEmail()
   @IsOptional()
   email?: string;
+
+  @ApiProperty({
+    example: '1990-01-15',
+    description: 'Fecha de nacimiento (formato ISO: YYYY-MM-DD)',
+    required: false,
+  })
+  @IsDateString()
+  @IsOptional()
+  fechaNacimiento?: string;
 
   @ApiProperty({ type: DireccionDto, required: false })
   @ValidateNested()

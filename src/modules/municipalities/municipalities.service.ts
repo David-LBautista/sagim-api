@@ -80,6 +80,13 @@ export class MunicipalitiesService {
       ...createMunicipalityDto,
       estadoId: new Types.ObjectId(createMunicipalityDto.estadoId),
       logoUrl,
+      onboardingCompletado: false,
+      onboardingSteps: {
+        datos: false,     // el admin confirma en el paso 1 del wizard
+        servicios: false,
+        equipo: false,
+        padron: false,
+      },
     });
 
     // Crear programas base del DIF para el nuevo municipio
@@ -327,5 +334,157 @@ export class MunicipalitiesService {
       .lean();
 
     return { ...(updatedMunicipality as any), admin: admin ?? null };
+  }
+
+  // ─────────────────────────────────────────────────────
+  // ONBOARDING
+  // ─────────────────────────────────────────────────────
+
+  /** Devuelve el estado actual del onboarding con los steps calculados */
+  async getOnboarding(id: string): Promise<any> {
+    const municipality = await this.municipalityModel
+      .findById(id)
+      .populate('estadoId', 'nombre')
+      .select('-__v')
+      .lean();
+
+    if (!municipality) throw new NotFoundException('Municipio no encontrado');
+
+    const operadoresCount = await this.userModel.countDocuments({
+      municipioId: new Types.ObjectId(id),
+      rol: UserRole.OPERATIVO,
+      activo: true,
+    });
+
+    const steps = {
+      datos: municipality.onboardingSteps?.datos ?? false,
+      servicios: municipality.onboardingSteps?.servicios ?? false,
+      equipo: municipality.onboardingSteps?.equipo ?? false,
+      padron: municipality.onboardingSteps?.padron ?? false,
+    };
+
+    // Campos informativos calculados en vivo desde los datos reales del municipio
+    const info = {
+      logo: !!(municipality as any).logoUrl,
+      contacto: !!(municipality as any).contactoEmail,
+    };
+
+    // Primer paso sin completar → 1-based
+    const orden = ['datos', 'servicios', 'equipo', 'padron'] as const;
+    const pasoActual =
+      (orden.findIndex((s) => !steps[s]) + 1) || 4;
+
+    return {
+      onboardingCompletado: municipality.onboardingCompletado ?? false,
+      pasoActual,
+      steps,
+      info,
+      operadoresCount,
+      municipio: municipality,
+    };
+  }
+
+  /** Paso 1 — Admin verificó los datos y presionó Continuar */
+  async completeOnboardingDatos(id: string): Promise<any> {
+    const municipality = await this.municipalityModel.findById(id);
+    if (!municipality) throw new NotFoundException('Municipio no encontrado');
+
+    await this.municipalityModel.findByIdAndUpdate(id, {
+      $set: { 'onboardingSteps.datos': true },
+    });
+
+    this.logger.log(
+      `Onboarding [datos] completado: ${municipality.nombre}`,
+      'MunicipalitiesService',
+    );
+    return { step: 'datos', completado: true };
+  }
+
+  /** Paso 2 — Admin revisó el catálogo de servicios */
+  async completeOnboardingServicios(id: string): Promise<any> {
+    const municipality = await this.municipalityModel.findById(id);
+    if (!municipality) throw new NotFoundException('Municipio no encontrado');
+
+    await this.municipalityModel.findByIdAndUpdate(id, {
+      $set: { 'onboardingSteps.servicios': true },
+    });
+
+    this.logger.log(
+      `Onboarding [servicios] completado: ${municipality.nombre}`,
+      'MunicipalitiesService',
+    );
+    return { step: 'servicios', completado: true };
+  }
+
+  /** Paso 3 — Valida ≥1 OPERATIVO activo y marca equipo completado */
+  async completeOnboardingEquipo(id: string): Promise<any> {
+    const municipality = await this.municipalityModel.findById(id);
+    if (!municipality) throw new NotFoundException('Municipio no encontrado');
+
+    const operadoresCount = await this.userModel.countDocuments({
+      municipioId: new Types.ObjectId(id),
+      rol: UserRole.OPERATIVO,
+      activo: true,
+    });
+
+    await this.municipalityModel.findByIdAndUpdate(id, {
+      $set: { 'onboardingSteps.equipo': true },
+    });
+
+    this.logger.log(
+      `Onboarding [equipo] completado: ${municipality.nombre} (${operadoresCount} operadores)`,
+      'MunicipalitiesService',
+    );
+    return { step: 'equipo', completado: true, operadoresCount };
+  }
+
+  /** Paso 4 — Importó padrón o lo saltó (ambos casos marcan el step como completado) */
+  async completeOnboardingPadron(
+    id: string,
+    saltado: boolean = false,
+  ): Promise<any> {
+    const municipality = await this.municipalityModel.findById(id);
+    if (!municipality) throw new NotFoundException('Municipio no encontrado');
+
+    await this.municipalityModel.findByIdAndUpdate(id, {
+      $set: { 'onboardingSteps.padron': true },
+    });
+
+    this.logger.log(
+      `Onboarding [padron] completado: ${municipality.nombre} (${saltado ? 'saltado' : 'importado'})`,
+      'MunicipalitiesService',
+    );
+    return { step: 'padron', completado: true, saltado };
+  }
+
+  /** Paso final — Valida pasos requeridos y marca onboardingCompletado */
+  async completarOnboarding(id: string): Promise<any> {
+    const municipality = await this.municipalityModel.findById(id);
+    if (!municipality) throw new NotFoundException('Municipio no encontrado');
+
+    const steps = municipality.onboardingSteps as any;
+    const faltantes: string[] = [];
+    if (!steps?.datos) faltantes.push('datos');
+    if (!steps?.servicios) faltantes.push('servicios');
+    if (!steps?.equipo) faltantes.push('equipo');
+
+    if (faltantes.length > 0) {
+      throw new BadRequestException(
+        `Pasos requeridos sin completar: ${faltantes.join(', ')}`,
+      );
+    }
+
+    await this.municipalityModel.findByIdAndUpdate(id, {
+      $set: {
+        onboardingCompletado: true,
+        'onboardingSteps.padron': steps?.padron ?? true, // saltar = completado
+      },
+    });
+
+    this.logger.log(
+      `Onboarding COMPLETADO: ${municipality.nombre}`,
+      'MunicipalitiesService',
+    );
+    return { onboardingCompletado: true };
   }
 }

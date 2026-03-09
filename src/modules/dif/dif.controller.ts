@@ -7,7 +7,12 @@ import {
   Param,
   Query,
   UseGuards,
+  UseInterceptors,
+  UploadedFile,
+  HttpCode,
+  HttpStatus,
 } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
 import { DifService } from './dif.service';
 import {
   CreateBeneficiarioDto,
@@ -31,6 +36,8 @@ import {
   ApiBearerAuth,
   ApiOperation,
   ApiQuery,
+  ApiConsumes,
+  ApiBody,
 } from '@nestjs/swagger';
 
 @ApiTags('DIF')
@@ -134,6 +141,56 @@ export class DifController {
       },
       pageNum,
       limitNum,
+    );
+  }
+
+  @Post('beneficiarios/importar')
+  @HttpCode(HttpStatus.OK)
+  @Roles(UserRole.SUPER_ADMIN, UserRole.ADMIN_MUNICIPIO, UserRole.OPERATIVO)
+  @UseInterceptors(FileInterceptor('archivo'))
+  @ApiConsumes('multipart/form-data')
+  @ApiOperation({
+    summary:
+      'Importar padrón DIF desde Excel — crea ciudadanos si no existen y luego crea/actualiza beneficiarios',
+  })
+  @ApiBody({
+    schema: {
+      type: 'object',
+      required: ['archivo', 'mapeo'],
+      properties: {
+        archivo: { type: 'string', format: 'binary' },
+        mapeo: {
+          type: 'string',
+          example:
+            '{"curp":"CURP","nombre":"NOMBRE","apellidoPaterno":"APELLIDO_PATERNO","apellidoMaterno":"APELLIDO_MATERNO","grupoVulnerable":"GRUPO_VULNERABLE","fechaNacimiento":"FECHA_NACIMIENTO","sexo":"SEXO","telefono":"TELEFONO","email":"EMAIL","localidad":"LOCALIDAD","domicilio":"DOMICILIO","observaciones":"OBSERVACIONES"}',
+          description: 'JSON con mapeo campo-sistema → nombre columna Excel',
+        },
+        accionDuplicados: {
+          type: 'string',
+          enum: ['ignorar', 'actualizar'],
+          default: 'ignorar',
+        },
+      },
+    },
+  })
+  async importarBeneficiarios(
+    @MunicipalityId() municipioId: string,
+    @UploadedFile() archivo: Express.Multer.File,
+    @Body('mapeo') mapeoStr: string,
+    @Body('accionDuplicados')
+    accionDuplicados: 'ignorar' | 'actualizar' = 'ignorar',
+  ) {
+    let mapeo: Record<string, string>;
+    try {
+      mapeo = JSON.parse(mapeoStr ?? '{}');
+    } catch {
+      mapeo = {};
+    }
+    return this.difService.importarBeneficiarios(
+      municipioId,
+      archivo.buffer,
+      mapeo,
+      accionDuplicados ?? 'ignorar',
     );
   }
 
