@@ -4,9 +4,11 @@ import {
   IsNumber,
   IsBoolean,
   IsInt,
+  IsEnum,
   Min,
 } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
+import { TipoTramite } from './create-servicio-cobro.dto';
 
 /**
  * DTO para que un municipio cree o actualice un override de un servicio global.
@@ -23,6 +25,18 @@ export class UpsertServicioOverrideDto {
   @Min(0)
   costo?: number;
 
+  @ApiProperty({ required: false, description: 'Costo en pesos MXN' })
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  costoPesos?: number;
+
+  @ApiProperty({ required: false, description: 'Costo en UMA' })
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  costoUMA?: number;
+
   @ApiProperty({ required: false })
   @IsOptional()
   @IsString()
@@ -35,6 +49,11 @@ export class UpsertServicioOverrideDto {
 
   @ApiProperty({ required: false })
   @IsOptional()
+  @IsString()
+  areaResponsable?: string;
+
+  @ApiProperty({ required: false })
+  @IsOptional()
   @IsBoolean()
   montoVariable?: boolean;
 
@@ -42,6 +61,16 @@ export class UpsertServicioOverrideDto {
   @IsOptional()
   @IsBoolean()
   requiereContribuyente?: boolean;
+
+  @ApiProperty({ required: false })
+  @IsOptional()
+  @IsBoolean()
+  tieneDescuento?: boolean;
+
+  @ApiProperty({ required: false, enum: TipoTramite })
+  @IsOptional()
+  @IsEnum(TipoTramite)
+  tipoTramite?: TipoTramite;
 
   @ApiProperty({ required: false })
   @IsOptional()

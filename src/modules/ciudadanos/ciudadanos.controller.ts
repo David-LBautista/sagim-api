@@ -50,6 +50,31 @@ export class CiudadanosController {
     return this.ciudadanosService.estadisticas(scope);
   }
 
+  @Get('verificar-curp/:curp')
+  @ApiOperation({
+    summary:
+      'Verificar si existe un ciudadano por CURP — siempre 200, nunca 404. Usar en dialogs de registro.',
+  })
+  @ApiResponse({
+    status: 200,
+    schema: {
+      example: {
+        existe: true,
+        ciudadano: {
+          nombre: 'Luis',
+          apellidoPaterno: 'Ortega',
+          apellidoMaterno: 'Juárez',
+          telefono: '2281234567',
+          email: 'luis@gmail.com',
+          direccion: { localidad: 'Cabecera Municipal' },
+        },
+      },
+    },
+  })
+  verificarCurp(@Param('curp') curp: string, @TenantScope() scope: any) {
+    return this.ciudadanosService.verificarCurp(curp, scope);
+  }
+
   @Get('exportar')
   @ApiOperation({ summary: 'Descargar padrón en Excel (.xlsx)' })
   @ApiQuery({ name: 'busqueda', required: false })

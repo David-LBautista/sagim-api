@@ -8,6 +8,7 @@ import { Model, Types } from 'mongoose';
 import { Reporte, ReporteDocument } from './schemas/reporte.schema';
 import { CreateReporteDto, UpdateReporteDto } from './dto';
 import { ReportStatus } from '@/shared/enums';
+import { Counter, CounterDocument } from '@/modules/dif/schemas/counter.schema';
 import { CloudinaryService } from '../cloudinary/cloudinary.service';
 
 @Injectable()
@@ -15,6 +16,8 @@ export class ReportesService {
   constructor(
     @InjectModel(Reporte.name)
     private reporteModel: Model<ReporteDocument>,
+    @InjectModel(Counter.name)
+    private counterModel: Model<CounterDocument>,
     private cloudinaryService: CloudinaryService,
   ) {}
 
@@ -33,11 +36,18 @@ export class ReportesService {
     }
 
     // Generar folio único
-    const count = await this.reporteModel.countDocuments({
-      municipioId: new Types.ObjectId(municipioIdFromToken),
-    });
-    const folio = `REP-${new Date().getFullYear()}-${String(count + 1).padStart(6, '0')}`;
-
+    const date = new Date();
+    const yy = date.getFullYear().toString().slice(-2);
+    const mm = (date.getMonth() + 1).toString().padStart(2, '0');
+    const yymm = `${yy}${mm}`;
+    const munShort = municipioIdFromToken.toString().slice(-4).toUpperCase();
+    const counterId = `rep-${munShort}-${yymm}`;
+    const counter = await this.counterModel.findOneAndUpdate(
+      { _id: counterId },
+      { $inc: { seq: 1 } },
+      { upsert: true, new: true },
+    );
+    const folio = `REP-${yymm}-${counter.seq.toString().padStart(4, '0')}`;
     const reporte = new this.reporteModel({
       ...createReporteDto,
       municipioId: new Types.ObjectId(municipioIdFromToken),

@@ -9,6 +9,7 @@ import {
   CreateLocalidadDto,
   CreateLocalidadesBulkDto,
 } from './dto/create-localidad.dto';
+import { CategoriaServicioResponseDto } from './dto/categoria-servicio.dto';
 
 @ApiTags('Catalogos')
 @Controller('catalogos')
@@ -161,5 +162,59 @@ export class CatalogosController {
       createLocalidadesBulkDto.municipioId,
       createLocalidadesBulkDto.localidades,
     );
+  }
+
+  // ==================== CATEGORÍAS DE SERVICIOS ====================
+
+  @Public()
+  @Get('categorias-servicios')
+  @ApiOperation({
+    summary: 'Catálogo de categorías de servicios municipales',
+    description:
+      'Devuelve todas las categorías activas con su área responsable y orden, ordenadas por posición.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Lista de categorías activas',
+    type: [CategoriaServicioResponseDto],
+  })
+  async getCategoriasServicios() {
+    return this.catalogosService.getCategoriasServicios();
+  }
+
+  @Public()
+  @Get('categorias-servicios/:nombre')
+  @ApiOperation({
+    summary: 'Obtener una categoría de servicio por nombre',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Categoría encontrada',
+    type: CategoriaServicioResponseDto,
+  })
+  async getCategoriaServicioByNombre(@Param('nombre') nombre: string) {
+    return this.catalogosService.getCategoriaServicioByNombre(
+      decodeURIComponent(nombre),
+    );
+  }
+
+  @Public()
+  @Get('areas-responsables')
+  @ApiOperation({
+    summary: 'Listado de áreas responsables de servicios municipales',
+    description:
+      'Devuelve los valores únicos de areaResponsable del catálogo de categorías, ordenados alfabéticamente.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Lista de áreas responsables',
+    schema: {
+      type: 'array',
+      items: { type: 'string' },
+      example: ['Dirección de Comercio', 'Dirección de Gobernación'],
+    },
+  })
+  async getAreasResponsablesServicios() {
+    return this.catalogosService.getAreasResponsablesServicios();
   }
 }

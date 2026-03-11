@@ -10,6 +10,8 @@ import { InjectConnection } from '@nestjs/mongoose';
 import { fecha } from '@/common/helpers/fecha.helper';
 import * as XLSX from 'xlsx';
 import { CiudadanosService } from '../ciudadanos/ciudadanos.service';
+import { SagimGateway } from '../notificaciones/sagim.gateway';
+import { DashboardService } from '../dashboard/dashboard.service';
 
 import {
   Beneficiario,
@@ -53,6 +55,8 @@ export class DifService {
     @InjectModel(Counter.name)
     private counterModel: Model<CounterDocument>,
     private readonly ciudadanosService: CiudadanosService,
+    private readonly sagimGateway: SagimGateway,
+    private readonly dashboardService: DashboardService,
   ) {}
 
   // ==================== UTILIDADES ====================
@@ -84,7 +88,7 @@ export class DifService {
 
     // Generar folio con secuencia de 4 dígitos
     const secuencial = counter.seq.toString().padStart(4, '0');
-    return `MOV-${year}${month}-${secuencial}`;
+    return `MOV-${year.toString().slice(-2)}${month}-${secuencial}`;
   }
 
   private async generateFolioApoyo(
@@ -108,7 +112,7 @@ export class DifService {
     );
 
     const secuencial = counter.seq.toString().padStart(4, '0');
-    return `APO-${year}${month}-${secuencial}`;
+    return `APO-${year.toString().slice(-2)}${month}-${secuencial}`;
   }
 
   /**
@@ -130,14 +134,14 @@ export class DifService {
     );
 
     const secuencial = counter.seq.toString().padStart(4, '0');
-    return `BEN-${year}${month}-${secuencial}`;
+    return `BEN-${year.toString().slice(-2)}${month}-${secuencial}`;
   }
 
   // ==================== BENEFICIARIOS ====================
   async createBeneficiario(
     createBeneficiarioDto: CreateBeneficiarioDto,
     municipioId: string,
-  ): Promise<Beneficiario> {
+  ): Promise<Beneficiario & { ciudadanoCreado: boolean }> {
     // Validar que no exista el beneficiario con el mismo CURP en el municipio
     const existente = await this.beneficiarioModel.findOne({
       curp: createBeneficiarioDto.curp,
@@ -150,6 +154,43 @@ export class DifService {
       );
     }
 
+    // ── Find-or-create ciudadano ──────────────────────────────────────────────
+    // El padrón DIF y el padrón municipal comparten la misma CURP como llave.
+    // Si el ciudadano aún no existe se crea automáticamente con los datos del DTO.
+    let ciudadanoCreado = false;
+    try {
+      await this.ciudadanosService.findByCurp(createBeneficiarioDto.curp, {
+        municipioId: new Types.ObjectId(municipioId),
+      });
+    } catch {
+      // No existe → crearlo
+      await this.ciudadanosService.create(
+        {
+          curp: createBeneficiarioDto.curp,
+          nombre: createBeneficiarioDto.nombre,
+          apellidoPaterno: createBeneficiarioDto.apellidoPaterno,
+          apellidoMaterno: createBeneficiarioDto.apellidoMaterno ?? '',
+          telefono: createBeneficiarioDto.telefono,
+          email: createBeneficiarioDto.email,
+          fechaNacimiento: createBeneficiarioDto.fechaNacimiento,
+          ...(createBeneficiarioDto.localidad || createBeneficiarioDto.domicilio
+            ? {
+                direccion: {
+                  localidad: createBeneficiarioDto.localidad ?? '',
+                  calle: createBeneficiarioDto.domicilio ?? '',
+                  colonia: '',
+                  numero: '',
+                  codigoPostal: '',
+                },
+              }
+            : {}),
+        },
+        municipioId,
+      );
+      ciudadanoCreado = true;
+    }
+    // ─────────────────────────────────────────────────────────────────────────
+
     const beneficiario = new this.beneficiarioModel({
       ...createBeneficiarioDto,
       municipioId: new Types.ObjectId(municipioId),
@@ -159,7 +200,8 @@ export class DifService {
     // Generar folio consecutivo atómico por municipio
     beneficiario.folio = await this.generateFolioBeneficiario(municipioId);
 
-    return beneficiario.save();
+    const saved = await beneficiario.save();
+    return Object.assign(saved.toObject(), { ciudadanoCreado }) as any;
   }
 
   async findBeneficiarios(
@@ -174,6 +216,7 @@ export class DifService {
       edadMin?: number; // edad mínima (años cumplidos)
       edadMax?: number; // edad máxima (años cumplidos)
       programaId?: string; // ObjectId de programa DIF
+      grupoVulnerable?: string; // valor exacto del enum GrupoVulnerable
     } = {},
     page: number = 1,
     limit: number = 20,
@@ -240,6 +283,11 @@ export class DifService {
         hasta.setFullYear(hoy.getFullYear() - filters.edadMin);
         query.fechaNacimiento.$lte = hasta;
       }
+    }
+
+    // Grupo vulnerable (array contains)
+    if (filters.grupoVulnerable) {
+      query.grupoVulnerable = filters.grupoVulnerable.toUpperCase();
     }
 
     // Filtro por programa: buscar beneficiarioIds en apoyos
@@ -373,12 +421,10 @@ export class DifService {
   async updateBeneficiario(
     id: string,
     updateBeneficiarioDto: UpdateBeneficiarioDto,
-    municipioId: string,
+    scope: any,
   ): Promise<Beneficiario> {
     // Validar que el beneficiario existe
-    const beneficiario = await this.findBeneficiarioById(id, {
-      municipioId: new Types.ObjectId(municipioId),
-    });
+    const beneficiario = await this.findBeneficiarioById(id, scope);
 
     // Si se está actualizando el CURP, validar que no exista otro beneficiario con ese CURP
     if (
@@ -387,7 +433,7 @@ export class DifService {
     ) {
       const existente = await this.beneficiarioModel.findOne({
         curp: updateBeneficiarioDto.curp,
-        municipioId: new Types.ObjectId(municipioId),
+        ...scope,
         _id: { $ne: new Types.ObjectId(id) },
       });
 
@@ -403,7 +449,7 @@ export class DifService {
       .findOneAndUpdate(
         {
           _id: new Types.ObjectId(id),
-          municipioId: new Types.ObjectId(municipioId),
+          ...scope,
         },
         { $set: updateBeneficiarioDto },
         { new: true },
@@ -411,6 +457,223 @@ export class DifService {
       .exec();
 
     return beneficiarioActualizado;
+  }
+
+  /**
+   * Verifica si existe un beneficiario por CURP sin lanzar excepción.
+   * Usado por el flujo del dialog de registro para detectar duplicados antes de enviar POST.
+   */
+  async verificarBeneficiarioCurp(
+    curp: string,
+    scope: any,
+  ): Promise<{ existe: boolean; beneficiario: Beneficiario | null }> {
+    const beneficiario = await this.beneficiarioModel
+      .findOne({ curp: curp.toUpperCase(), ...scope })
+      .lean();
+    return {
+      existe: !!beneficiario,
+      beneficiario: (beneficiario as unknown as Beneficiario) ?? null,
+    };
+  }
+
+  // ==================== SOFT-DELETE ====================
+
+  async desactivarBeneficiario(
+    id: string,
+    scope: any,
+  ): Promise<{ message: string }> {
+    const beneficiario = await this.beneficiarioModel.findOne({
+      _id: new Types.ObjectId(id),
+      ...scope,
+    });
+    if (!beneficiario)
+      throw new NotFoundException('Beneficiario no encontrado');
+
+    await this.beneficiarioModel.findByIdAndUpdate(id, {
+      $set: { activo: false },
+    });
+
+    return { message: 'Beneficiario desactivado correctamente' };
+  }
+
+  // ==================== ESTADÍSTICAS ====================
+
+  async estadisticasBeneficiarios(scope: any): Promise<{
+    total: number;
+    activos: number;
+    porGrupoVulnerable: Record<string, number>;
+    registradosEsteMes: number;
+  }> {
+    const inicioMes = new Date();
+    inicioMes.setDate(1);
+    inicioMes.setHours(0, 0, 0, 0);
+
+    const [total, activos, registradosEsteMes, grupoAgg] = await Promise.all([
+      this.beneficiarioModel.countDocuments({ ...scope }),
+      this.beneficiarioModel.countDocuments({ ...scope, activo: true }),
+      this.beneficiarioModel.countDocuments({
+        ...scope,
+        createdAt: { $gte: inicioMes },
+      }),
+      this.beneficiarioModel.aggregate([
+        { $match: { ...scope, activo: true } },
+        { $unwind: '$grupoVulnerable' },
+        { $group: { _id: '$grupoVulnerable', count: { $sum: 1 } } },
+        { $sort: { count: -1 } },
+      ]),
+    ]);
+
+    const porGrupoVulnerable: Record<string, number> = {};
+    for (const item of grupoAgg) {
+      porGrupoVulnerable[item._id as string] = item.count as number;
+    }
+
+    return { total, activos, porGrupoVulnerable, registradosEsteMes };
+  }
+
+  // ==================== EXPORTAR ====================
+
+  async exportarBeneficiarios(
+    scope: any,
+    filters: {
+      search?: string;
+      grupoVulnerable?: string;
+      programaId?: string;
+      activo?: string;
+    } = {},
+  ): Promise<Buffer> {
+    const soloActivos = filters.activo === 'false' ? false : true;
+    const query: any = { ...scope, activo: soloActivos };
+
+    if (filters.search) {
+      const regex = { $regex: filters.search, $options: 'i' };
+      query.$or = [
+        { nombre: regex },
+        { apellidoPaterno: regex },
+        { apellidoMaterno: regex },
+        { curp: { $regex: filters.search.toUpperCase(), $options: 'i' } },
+        { folio: { $regex: filters.search.toUpperCase(), $options: 'i' } },
+      ];
+    }
+
+    if (filters.grupoVulnerable) {
+      query.grupoVulnerable = {
+        $in: [filters.grupoVulnerable.toUpperCase()],
+      };
+    }
+
+    if (filters.programaId) {
+      const apoyos = await this.apoyoModel
+        .find({ programaId: new Types.ObjectId(filters.programaId) })
+        .select('beneficiarioId')
+        .lean();
+      const ids = [
+        ...new Set(apoyos.map((a: any) => a.beneficiarioId.toString())),
+      ];
+      query._id = { $in: ids.map((id) => new Types.ObjectId(id)) };
+    }
+
+    const beneficiarios = await this.beneficiarioModel
+      .find(query)
+      .sort({ apellidoPaterno: 1, nombre: 1 })
+      .lean();
+
+    const filas = beneficiarios.map((b: any) => ({
+      Folio: b.folio ?? '',
+      CURP: b.curp,
+      Nombre: b.nombre,
+      'Apellido Paterno': b.apellidoPaterno,
+      'Apellido Materno': b.apellidoMaterno ?? '',
+      'Fecha Nacimiento': b.fechaNacimiento
+        ? new Date(b.fechaNacimiento).toISOString().split('T')[0]
+        : '',
+      Sexo: b.sexo ?? '',
+      Teléfono: b.telefono ?? '',
+      Email: b.email ?? '',
+      Localidad: b.localidad ?? '',
+      Domicilio: b.domicilio ?? '',
+      'Grupos Vulnerables': Array.isArray(b.grupoVulnerable)
+        ? b.grupoVulnerable.join(', ')
+        : '',
+      Observaciones: b.observaciones ?? '',
+      Estatus: b.activo ? 'Activo' : 'Inactivo',
+      'Fecha Registro': new Date(b.createdAt).toISOString().split('T')[0],
+    }));
+
+    const wb = XLSX.utils.book_new();
+    const ws = XLSX.utils.json_to_sheet(filas);
+    XLSX.utils.book_append_sheet(wb, ws, 'Padrón Beneficiarios');
+    return XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' }) as Buffer;
+  }
+
+  async exportarApoyos(
+    scope: any,
+    filters: {
+      curp?: string;
+      programaId?: string;
+      from?: string;
+      to?: string;
+    } = {},
+  ): Promise<Buffer> {
+    const query: any = { ...scope };
+
+    if (filters.curp) {
+      const beneficiario = await this.beneficiarioModel.findOne({
+        curp: filters.curp.toUpperCase(),
+        ...scope,
+      });
+      if (beneficiario) {
+        query.beneficiarioId = beneficiario._id;
+      } else {
+        // Sin beneficiario encontrado → exportar vacío
+        const wb = XLSX.utils.book_new();
+        const ws = XLSX.utils.json_to_sheet([]);
+        XLSX.utils.book_append_sheet(wb, ws, 'Apoyos DIF');
+        return XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' }) as Buffer;
+      }
+    }
+
+    if (filters.programaId) {
+      query.programaId = new Types.ObjectId(filters.programaId);
+    }
+
+    if (filters.from || filters.to) {
+      query.fecha = {};
+      if (filters.from) query.fecha.$gte = fecha.inicioDia(filters.from);
+      if (filters.to) query.fecha.$lte = fecha.finDia(filters.to);
+    }
+
+    const apoyos = await this.apoyoModel
+      .find(query)
+      .populate<{
+        beneficiarioId: any;
+      }>('beneficiarioId', 'nombre apellidoPaterno apellidoMaterno curp folio')
+      .populate<{ programaId: any }>('programaId', 'nombre')
+      .populate<{ entregadoPor: any }>('entregadoPor', 'nombre email')
+      .sort({ fecha: -1 })
+      .lean();
+
+    const filas = apoyos.map((a: any) => ({
+      'Fecha Apoyo': a.fecha
+        ? new Date(a.fecha).toISOString().split('T')[0]
+        : '',
+      Programa: a.programaId?.nombre ?? '',
+      CURP: a.beneficiarioId?.curp ?? '',
+      Folio: a.beneficiarioId?.folio ?? '',
+      Beneficiario: a.beneficiarioId
+        ? `${a.beneficiarioId.nombre} ${a.beneficiarioId.apellidoPaterno} ${a.beneficiarioId.apellidoMaterno ?? ''}`.trim()
+        : '',
+      Tipo: a.tipo ?? '',
+      Cantidad: a.cantidad ?? 1,
+      Monto: a.monto ?? 0,
+      Observaciones: a.observaciones ?? '',
+      'Entregado Por': a.entregadoPor?.nombre ?? '',
+    }));
+
+    const wb = XLSX.utils.book_new();
+    const ws = XLSX.utils.json_to_sheet(filas);
+    XLSX.utils.book_append_sheet(wb, ws, 'Apoyos DIF');
+    return XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' }) as Buffer;
   }
 
   // ==================== PROGRAMAS ====================
@@ -499,9 +762,10 @@ export class DifService {
     // Determinar modo de operación
     const usarItems = createApoyoDto.items && createApoyoDto.items.length > 0;
 
+    let resultado: any;
     if (usarItems) {
       // ==================== MODO NUEVO: Items del inventario ====================
-      return await this.createApoyoConItems(
+      resultado = await this.createApoyoConItems(
         createApoyoDto,
         municipioId,
         userId,
@@ -509,13 +773,26 @@ export class DifService {
       );
     } else {
       // ==================== MODO LEGACY: Tipo genérico ====================
-      return await this.createApoyoLegacy(
+      resultado = await this.createApoyoLegacy(
         createApoyoDto,
         municipioId,
         userId,
         apoyosPrevios,
       );
     }
+
+    // Actualizar dashboard presidencial en tiempo real (fire-and-forget)
+    void this.dashboardService
+      .getDashboardPresidencialSnapshot(municipioId)
+      .then((snapshot) =>
+        this.sagimGateway.emitDashboardPresidencialUpdate(
+          municipioId,
+          snapshot,
+        ),
+      )
+      .catch(() => {});
+
+    return resultado;
   }
 
   /**
@@ -1575,12 +1852,8 @@ export class DifService {
 
       try {
         // ── Mapear columnas ──
-        const curpRaw = String(
-          fila[mapeo['curp'] ?? 'CURP'] ?? '',
-        ).trim();
-        const nombre = String(
-          fila[mapeo['nombre'] ?? 'NOMBRE'] ?? '',
-        ).trim();
+        const curpRaw = String(fila[mapeo['curp'] ?? 'CURP'] ?? '').trim();
+        const nombre = String(fila[mapeo['nombre'] ?? 'NOMBRE'] ?? '').trim();
         const apellidoPaterno = String(
           fila[mapeo['apellidoPaterno'] ?? 'APELLIDO_PATERNO'] ?? '',
         ).trim();
@@ -1592,7 +1865,8 @@ export class DifService {
         ).trim();
 
         // Campos requeridos
-        const nombreDisplay = `${nombre} ${apellidoPaterno}`.trim() || `Fila ${filaNum}`;
+        const nombreDisplay =
+          `${nombre} ${apellidoPaterno}`.trim() || `Fila ${filaNum}`;
         if (!curpRaw || !nombre || !apellidoPaterno || !grupoVulnerableRaw) {
           detalleErrores.push({
             fila: filaNum,
@@ -1615,9 +1889,7 @@ export class DifService {
         }
 
         // ── Campos opcionales ──
-        const telefono = String(
-          fila[mapeo['telefono'] ?? 'TELEFONO'] ?? '',
-        )
+        const telefono = String(fila[mapeo['telefono'] ?? 'TELEFONO'] ?? '')
           .replace(/\s+/g, '')
           .trim();
         const email = String(fila[mapeo['email'] ?? 'EMAIL'] ?? '')
@@ -1697,7 +1969,11 @@ export class DifService {
 
         if (beneficiarioExistente) {
           if (accionDuplicados === 'actualizar') {
-            const updateData: any = { nombre, apellidoPaterno, grupoVulnerable };
+            const updateData: any = {
+              nombre,
+              apellidoPaterno,
+              grupoVulnerable,
+            };
             if (apellidoMaterno) updateData.apellidoMaterno = apellidoMaterno;
             if (telefono) updateData.telefono = telefono;
             if (email) updateData.email = email;

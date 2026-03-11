@@ -22,6 +22,10 @@ import {
 } from './schemas/grupo-vulnerable.schema';
 import { TipoApoyo, TipoApoyoSchema } from './schemas/tipo-apoyo.schema';
 import { Localidad, LocalidadSchema } from './schemas/localidad.schema';
+import {
+  CategoriaServicio,
+  CategoriaServicioSchema,
+} from './schemas/categoria-servicio.schema';
 
 @Module({
   imports: [
@@ -34,6 +38,7 @@ import { Localidad, LocalidadSchema } from './schemas/localidad.schema';
       { name: GrupoVulnerable.name, schema: GrupoVulnerableSchema },
       { name: TipoApoyo.name, schema: TipoApoyoSchema },
       { name: Localidad.name, schema: LocalidadSchema },
+      { name: CategoriaServicio.name, schema: CategoriaServicioSchema },
     ]),
   ],
   controllers: [CatalogosController],

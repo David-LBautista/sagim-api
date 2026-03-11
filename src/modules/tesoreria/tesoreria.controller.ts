@@ -90,6 +90,12 @@ export class TesoreriaController {
     description: 'Filtra por categoría',
   })
   @ApiQuery({
+    name: 'areaResponsable',
+    required: false,
+    description:
+      'Filtra por área responsable (puede abarcar varias categorías)',
+  })
+  @ApiQuery({
     name: 'soloPersonalizados',
     required: false,
     type: Boolean,
@@ -100,6 +106,7 @@ export class TesoreriaController {
     @MunicipalityId() municipioId: string,
     @Query('busqueda') busqueda?: string,
     @Query('categoria') categoria?: string,
+    @Query('areaResponsable') areaResponsable?: string,
     @Query('soloPersonalizados') soloPersonalizados?: string,
   ) {
     return this.tesoreriaService.findServiciosByMunicipio(
@@ -107,6 +114,7 @@ export class TesoreriaController {
       {
         busqueda,
         categoria,
+        areaResponsable,
         soloPersonalizados: soloPersonalizados === 'true',
       },
     );

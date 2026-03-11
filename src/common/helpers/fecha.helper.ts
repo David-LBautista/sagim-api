@@ -61,4 +61,12 @@ export const fecha = {
       .startOf('day')
       .utc()
       .toDate(),
+
+  // Parsear fecha YYYY-MM-DD como fin del día en México
+  parsearFechaFin: (fechaStr: string) =>
+    dayjs
+      .tz(fechaStr, 'YYYY-MM-DD', TIMEZONE_MEXICO)
+      .endOf('day')
+      .utc()
+      .toDate(),
 };

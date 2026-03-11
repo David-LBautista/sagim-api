@@ -73,6 +73,7 @@ export async function seedModulos(app?: any) {
       },
       { nombre: 'CITAS', descripcion: 'Módulo de Gestión de Citas' },
       { nombre: 'REGISTRO_CIVIL', descripcion: 'Módulo de Registro Civil' },
+      { nombre: 'AUDITORIA', descripcion: 'Módulo de Auditoría' },
     ];
 
     let insertados = 0;
@@ -104,7 +105,9 @@ export async function seedModulos(app?: any) {
     console.log('\n' + '='.repeat(60));
     console.log(`✅ Creados: ${insertados}`);
     console.log(`🔄 Actualizados: ${actualizados}`);
-    console.log(`⏭️  Sin cambios: ${modulos.length - insertados - actualizados}`);
+    console.log(
+      `⏭️  Sin cambios: ${modulos.length - insertados - actualizados}`,
+    );
     console.log('='.repeat(60) + '\n');
 
     return { insertados, actualizados, total: modulos.length };

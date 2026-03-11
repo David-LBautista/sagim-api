@@ -1,5 +1,6 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { Document, Types } from 'mongoose';
+import { TipoTramite } from '../dto/create-servicio-cobro.dto';
 
 export type ServicioCobroDocument = ServicioCobro & Document;
 
@@ -23,11 +24,19 @@ export class ServicioCobro {
   categoria: string; // "Registro Civil", "Predial", etc.
 
   /** Departamento municipal responsable del trámite — ej. "Registro Civil", "Tesorería", "Obras Públicas" */
-  @Prop()
-  areaResponsable?: string;
+  @Prop({ required: true })
+  areaResponsable: string;
 
   @Prop({ required: true, default: 0 })
   costo: number; // monto base en pesos
+
+  /** Costo fijo expresado en pesos MXN */
+  @Prop()
+  costoPesos?: number;
+
+  /** Costo expresado en Unidades de Medida y Actualización (UMA) */
+  @Prop()
+  costoUMA?: number;
 
   /** true = el cajero puede modificar el monto al cobrar */
   @Prop({ default: false })
@@ -36,6 +45,14 @@ export class ServicioCobro {
   /** true = debe asociarse a un ciudadano/contribuyente */
   @Prop({ default: false })
   requiereContribuyente: boolean;
+
+  /** true = el servicio aplica algún tipo de descuento */
+  @Prop({ default: false })
+  tieneDescuento: boolean;
+
+  /** Clasificación: 'tramite' | 'servicio' */
+  @Prop({ enum: TipoTramite })
+  tipoTramite?: TipoTramite;
 
   /** Posición de orden en la UI del cajero */
   @Prop({ default: 0 })

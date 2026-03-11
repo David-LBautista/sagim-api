@@ -71,6 +71,10 @@ class ModulosConfigDto {
   @ApiProperty({ example: true, required: false })
   @IsOptional()
   REGISTRO_CIVIL?: boolean;
+
+  @ApiProperty({ example: true, required: false })
+  @IsOptional()
+  AUDITORIA?: boolean;
 }
 
 class ConfigDto {

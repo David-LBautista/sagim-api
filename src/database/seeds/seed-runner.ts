@@ -9,16 +9,17 @@ import { seedLocalidades } from './06-localidades.seed';
 import { seedMunicipiosVeracruz } from './07-municipios-veracruz.seed';
 import { seedProgramasDif } from './08-programas-dif.seed';
 import { seedTesoreriaServicios } from './09-tesoreria-servicios.seed';
+import { seedCategoriasServicios } from './10-categorias-servicios.seed';
 
 /**
  * Seed Runner - Ejecuta todos los seeds en orden
- * 
+ *
  * Características:
  * ✅ Idempotente - Puede ejecutarse múltiples veces
  * ✅ Versionado - Seeds numerados en orden de ejecución
  * ✅ Transaccional - Si falla uno, se detiene
  * ✅ Con resumen - Muestra estadísticas al final
- * 
+ *
  * Uso:
  *   npm run seed
  *   npm run seed:dev
@@ -50,7 +51,7 @@ async function runAllSeeds() {
     // Seed 05: Super Admin
     results.superAdmin = await seedSuperAdmin(app);
 
-    // Seed 06: Municipios de Veracruz (requerido antes de localidades)
+    // Seed 07: Municipios de Veracruz (requerido antes de localidades)
     try {
       results.municipiosVeracruz = await seedMunicipiosVeracruz(app);
     } catch (error) {
@@ -63,7 +64,7 @@ async function runAllSeeds() {
       };
     }
 
-    // Seed 07: Localidades (opcional - requiere municipio)
+    // Seed 06: Localidades (opcional - requiere municipio)
     try {
       results.localidades = await seedLocalidades(app);
     } catch (error) {
@@ -83,6 +84,9 @@ async function runAllSeeds() {
 
     // Seed 09: Servicios cobrables de Tesorería (catálogo base)
     results.tesoreriaServicios = await seedTesoreriaServicios(app);
+
+    // Seed 10: Categorías de servicios municipales
+    results.categoriasServicios = await seedCategoriasServicios(app);
 
     const endTime = Date.now();
     const duration = ((endTime - startTime) / 1000).toFixed(2);
@@ -141,15 +145,6 @@ async function runAllSeeds() {
       );
     }
 
-    console.log('\n' + '='.repeat(70));
-    console.log(`✅ SEEDS COMPLETADOS EXITOSAMENTE en ${duration}s`);
-    console.log('='.repeat(70));
-    console.log('\n💡 Siguiente paso:');
-    console.log('   1. Crea un municipio desde el panel de Super Admin');
-    console.log(
-      '   2. O ejecuta el seed de municipios: npm run seed:municipios',
-    );
-    console.log('   3. Inicia sesión con el Super Admin\n');
     if (results.programasDif) {
       console.log(`\n🏛️  Programas DIF:`);
       console.log(`   ✅ Insertados: ${results.programasDif.insertados}`);
@@ -165,6 +160,27 @@ async function runAllSeeds() {
       );
       console.log(`   📦 Total: ${results.tesoreriaServicios.total}`);
     }
+
+    if (results.categoriasServicios) {
+      console.log(`\n🗂️  Categorías de Servicios:`);
+      console.log(
+        `   ✅ Insertadas: ${results.categoriasServicios.insertados}`,
+      );
+      console.log(
+        `   🔄 Actualizadas: ${results.categoriasServicios.actualizados}`,
+      );
+      console.log(`   📦 Total: ${results.categoriasServicios.total}`);
+    }
+
+    console.log('\n' + '='.repeat(70));
+    console.log(`✅ SEEDS COMPLETADOS EXITOSAMENTE en ${duration}s`);
+    console.log('='.repeat(70));
+    console.log('\n💡 Siguiente paso:');
+    console.log('   1. Crea un municipio desde el panel de Super Admin');
+    console.log(
+      '   2. O ejecuta el seed de municipios: npm run seed:municipios',
+    );
+    console.log('   3. Inicia sesión con el Super Admin\n');
   } catch (error) {
     console.error('\n❌ ERROR DURANTE LA EJECUCIÓN DE SEEDS:', error);
     console.error('\n📋 Stack trace:', error.stack);

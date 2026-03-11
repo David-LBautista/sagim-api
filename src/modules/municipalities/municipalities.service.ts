@@ -82,7 +82,7 @@ export class MunicipalitiesService {
       logoUrl,
       onboardingCompletado: false,
       onboardingSteps: {
-        datos: false,     // el admin confirma en el paso 1 del wizard
+        datos: false, // el admin confirma en el paso 1 del wizard
         servicios: false,
         equipo: false,
         padron: false,
@@ -150,6 +150,34 @@ export class MunicipalitiesService {
     );
 
     return municipality;
+  }
+
+  async findPublico(slug: string) {
+    const municipio = await this.municipalityModel
+      .findOne({
+        $or: [
+          { claveInegi: slug },
+          { nombre: { $regex: `^${slug.replace(/-/g, ' ')}$`, $options: 'i' } },
+        ],
+        activo: true,
+      })
+      .select(
+        'nombre logoUrl claveInegi contactoEmail contactoTelefono direccion config',
+      )
+      .lean();
+
+    if (!municipio) {
+      throw new NotFoundException(`Municipio "${slug}" no encontrado`);
+    }
+
+    return {
+      nombre: (municipio as any).nombre,
+      logoUrl: (municipio as any).logoUrl ?? null,
+      claveInegi: (municipio as any).claveInegi ?? null,
+      contactoEmail: (municipio as any).contactoEmail ?? null,
+      contactoTelefono: (municipio as any).contactoTelefono ?? null,
+      direccion: (municipio as any).direccion ?? null,
+    };
   }
 
   async findAll(): Promise<any[]> {
@@ -371,8 +399,7 @@ export class MunicipalitiesService {
 
     // Primer paso sin completar → 1-based
     const orden = ['datos', 'servicios', 'equipo', 'padron'] as const;
-    const pasoActual =
-      (orden.findIndex((s) => !steps[s]) + 1) || 4;
+    const pasoActual = orden.findIndex((s) => !steps[s]) + 1 || 4;
 
     return {
       onboardingCompletado: municipality.onboardingCompletado ?? false,

@@ -5,6 +5,7 @@
 /* eslint-disable @typescript-eslint/no-unsafe-assignment */
 import {
   Injectable,
+  Logger,
   NotFoundException,
   BadRequestException,
 } from '@nestjs/common';
@@ -38,10 +39,12 @@ import { TDocumentDefinitions } from 'pdfmake/interfaces';
 import Stripe from 'stripe';
 import { randomUUID } from 'crypto';
 import { fecha } from '@/common/helpers/fecha.helper';
+import { Counter, CounterDocument } from '@/modules/dif/schemas/counter.schema';
 
 @Injectable()
 export class PagosService {
   private stripe: Stripe;
+  private readonly logger = new Logger(PagosService.name);
 
   constructor(
     @InjectModel(Pago.name)
@@ -54,6 +57,8 @@ export class PagosService {
     private ciudadanoModel: Model<CiudadanoDocument>,
     @InjectModel(ServicioCobro.name)
     private servicioCobroModel: Model<ServicioCobroDocument>,
+    @InjectModel(Counter.name)
+    private counterModel: Model<CounterDocument>,
     private s3Service: S3Service,
     private readonly notificacionesService: NotificacionesService,
     private readonly pdfService: PdfService,
@@ -61,6 +66,25 @@ export class PagosService {
     this.stripe = new Stripe(process.env.STRIPE_SECRET_KEY || '', {
       apiVersion: '2026-01-28.clover',
     });
+  }
+
+  // ==================== FOLIO CONSECUTIVO — CONTADOR ATÓMICO ====================
+
+  private async generarFolioPago(municipioId: string): Promise<string> {
+    const date = new Date();
+    const yy = date.getFullYear().toString().slice(-2);
+    const mm = (date.getMonth() + 1).toString().padStart(2, '0');
+    const yymm = `${yy}${mm}`;
+    const munShort = municipioId.toString().slice(-4).toUpperCase();
+    const counterId = `pag-${munShort}-${yymm}`;
+
+    const counter = await this.counterModel.findOneAndUpdate(
+      { _id: counterId },
+      { $inc: { seq: 1 } },
+      { upsert: true, new: true },
+    );
+
+    return `PAG-${yymm}-${counter.seq.toString().padStart(4, '0')}`;
   }
 
   // ==================== PAGOS ====================
@@ -87,10 +111,7 @@ export class PagosService {
     }
 
     // Generar folio
-    const count = await this.pagoModel.countDocuments({
-      municipioId: new Types.ObjectId(municipioId),
-    });
-    const folio = `PAG-${new Date().getFullYear()}-${String(count + 1).padStart(6, '0')}`;
+    const folio = await this.generarFolioPago(municipioId);
 
     const pago = new this.pagoModel({
       ...createPagoDto,
@@ -514,11 +535,7 @@ export class PagosService {
     }
 
     // Generar folio para el pago
-    const count = await this.pagoModel.countDocuments({
-      municipioId: orden.municipioId,
-    });
-    const folio = `PAG-${new Date().getFullYear()}-${String(count + 1).padStart(6, '0')}`;
-
+    const folio = await this.generarFolioPago(orden.municipioId.toString());
     // ==================== CALCULAR MONTOS (CONTABILIDAD) ====================
     // El precio en línea YA incluye el fee de Stripe
     const montoCobrado = orden.monto; // Lo que pagó el ciudadano (precio en línea)
@@ -533,7 +550,7 @@ export class PagosService {
 
     // Desglose fiscal de contribución configurada por el municipio
     const municipioDoc = await this.municipalityModel
-      .findById(orden.municipioId, 'porcentajeContribucion')
+      .findById(orden.municipioId, 'nombre porcentajeContribucion')
       .lean();
     const pct = (municipioDoc as any)?.porcentajeContribucion ?? 10;
     const subtotal = Number((montoCobrado / (1 + pct / 100)).toFixed(2));
@@ -640,6 +657,32 @@ export class PagosService {
     // eslint-disable-next-line @typescript-eslint/no-unnecessary-type-assertion
     orden.pagoId = pagoGuardado._id as Types.ObjectId;
     await orden.save();
+
+    // Enviar email de confirmación (fire-and-forget — el pago ya está confirmado si falla)
+    const emailConfirmacion = (orden as any).metadata?.emailCiudadano as
+      | string
+      | undefined;
+    if (emailConfirmacion) {
+      void this.s3Service
+        .getSignedUrl(s3Key, 3600)
+        .then((reciboUrl) =>
+          this.notificacionesService.enviarConfirmacionPago({
+            email: emailConfirmacion,
+            nombreCiudadano: (orden as any).nombreContribuyente ?? 'Ciudadano',
+            municipioNombre: (municipioDoc as any)?.nombre ?? 'Municipio',
+            descripcion: orden.descripcion,
+            folio: pagoGuardado.folio,
+            monto: pagoGuardado.monto,
+            fechaPago: pagoGuardado.fechaPago,
+            reciboUrl,
+          }),
+        )
+        .catch((err: Error) =>
+          this.logger.warn(
+            `Confirmación no enviada para ${pagoGuardado.folio}: ${err.message}`,
+          ),
+        );
+    }
 
     return {
       success: true,

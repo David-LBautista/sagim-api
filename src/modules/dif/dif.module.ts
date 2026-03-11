@@ -3,6 +3,8 @@ import { MongooseModule } from '@nestjs/mongoose';
 import { DifController } from './dif.controller';
 import { DifService } from './dif.service';
 import { CiudadanosModule } from '../ciudadanos/ciudadanos.module';
+import { NotificacionesModule } from '../notificaciones/notificaciones.module';
+import { DashboardModule } from '../dashboard/dashboard.module';
 import {
   Beneficiario,
   BeneficiarioSchema,
@@ -19,6 +21,8 @@ import { Counter, CounterSchema } from './schemas/counter.schema';
 @Module({
   imports: [
     CiudadanosModule,
+    NotificacionesModule,
+    DashboardModule,
     MongooseModule.forFeature([
       { name: Beneficiario.name, schema: BeneficiarioSchema },
       { name: Programa.name, schema: ProgramaSchema },

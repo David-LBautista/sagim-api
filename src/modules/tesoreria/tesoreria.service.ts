@@ -3,8 +3,8 @@ import {
   NotFoundException,
   BadRequestException,
 } from '@nestjs/common';
-import { InjectModel } from '@nestjs/mongoose';
-import { Model, Types } from 'mongoose';
+import { InjectModel, InjectConnection } from '@nestjs/mongoose';
+import { Model, Types, Connection } from 'mongoose';
 import { TDocumentDefinitions } from 'pdfmake/interfaces';
 import { PdfService } from '../shared/pdf/pdf.service';
 import { folioExtendido } from '@/shared/helpers/folio.helper';
@@ -36,6 +36,7 @@ import {
 import { S3Service } from '../s3/s3.service';
 import { Counter, CounterDocument } from '../dif/schemas/counter.schema';
 import { SagimGateway } from '../notificaciones/sagim.gateway';
+import { DashboardService } from '../dashboard/dashboard.service';
 import {
   CreateServicioCobroDto,
   CreateOrdenPagoTesoreriaDto,
@@ -64,10 +65,12 @@ export class TesoreriaService {
     private ciudadanoModel: Model<CiudadanoDocument>,
     @InjectModel(Counter.name)
     private counterModel: Model<CounterDocument>,
+    @InjectConnection() private readonly connection: Connection,
     private readonly s3Service: S3Service,
     private readonly pdfService: PdfService,
     private readonly notificacionesService: NotificacionesService,
     private readonly sagimGateway: SagimGateway,
+    private readonly dashboardService: DashboardService,
   ) {}
 
   // ==================== SERVICIOS COBRABLES ====================
@@ -78,6 +81,7 @@ export class TesoreriaService {
     filters?: {
       busqueda?: string;
       categoria?: string;
+      areaResponsable?: string;
       soloPersonalizados?: boolean;
     },
   ): Promise<(ServicioCobro & { esPersonalizado: boolean })[]> {
@@ -109,7 +113,26 @@ export class TesoreriaService {
     }
 
     if (filters?.categoria) {
-      merged = merged.filter((s) => s.categoria === filters.categoria);
+      // Normaliza: SECRETARIA_DEL_AYUNTAMIENTO / "Secretaría del Ayuntamiento" → "secretaria ayuntamiento"
+      // Elimina acentos, guiones bajos, artículos/preposiciones cortas y espacios extra
+      const STOP = /\b(de|del|la|el|los|las|y|e)\b/g;
+      const normalize = (s: string) =>
+        s
+          .normalize('NFD')
+          .replace(/[\u0300-\u036f]/g, '')
+          .toLowerCase()
+          .replace(/[_\-]/g, ' ')
+          .replace(STOP, '')
+          .replace(/\s+/g, ' ')
+          .trim();
+      const cat = normalize(filters.categoria);
+      merged = merged.filter((s) => normalize(s.categoria ?? '') === cat);
+    }
+
+    if (filters?.areaResponsable) {
+      merged = merged.filter(
+        (s) => (s as any).areaResponsable === filters.areaResponsable,
+      );
     }
 
     if (filters?.busqueda) {
@@ -448,7 +471,11 @@ export class TesoreriaService {
       nombreContribuyente: nombreContribuyenteResuelto, // snapshot siempre — permite buscar por nombre independientemente de si hay ciudadanoId
       monto: dto.monto,
       descripcion: dto.descripcion,
-      areaResponsable: dto.areaResponsable,
+      // Prioridad: areaResponsable del servicio cargado (canónico) > categoría del servicio > lo que manda el DTO
+      areaResponsable:
+        (servicio as any).areaResponsable ??
+        (servicio as any).categoria ??
+        dto.areaResponsable,
       observaciones: dto.observaciones,
       folioDocumento: dto.folioDocumento,
       estado: OrdenPagoStatus.PENDIENTE,
@@ -559,7 +586,10 @@ export class TesoreriaService {
     if (filters?.ciudadanoId)
       query.ciudadanoId = new Types.ObjectId(filters.ciudadanoId);
     if (filters?.areaResponsable)
-      query.areaResponsable = filters.areaResponsable;
+      query.areaResponsable = {
+        $regex: filters.areaResponsable,
+        $options: 'i',
+      };
     if (filters?.fechaDesde || filters?.fechaHasta) {
       query.createdAt = {};
       if (filters.fechaDesde) query.createdAt.$gte = filters.fechaDesde;
@@ -1262,66 +1292,124 @@ export class TesoreriaService {
     // 4. Generar folio consecutivo atómico: CAJA-{YYYYMM}-{0001}
     const folio = await this.generateFolioCaja(municipioId);
 
-    // 5. Crear y guardar el pago con desglose fiscal
-    const pago = await new this.pagoCajaModel({
-      municipioId: new Types.ObjectId(municipioId),
-      folio,
-      servicioId: new Types.ObjectId(dto.servicioId),
-      servicioNombre: (servicio as any).nombre, // snapshot
-      servicioCategoria: (servicio as any).categoria, // snapshot
-      ciudadanoId: dto.ciudadanoId ? new Types.ObjectId(dto.ciudadanoId) : null,
-      nombreContribuyente: dto.nombreContribuyente ?? null,
-      monto: dto.monto,
-      subtotal,
-      contribucion,
-      porcentajeContribucion, // snapshot
-      metodoPago: dto.metodoPago,
-      estado: 'PAGADO',
-      canal: CanalPago.CAJA,
-      cajeroId: new Types.ObjectId(cajeroId),
-      cajeroNombre, // snapshot
-      fechaPago: new Date(),
-      observaciones: dto.observaciones,
-      referenciaDocumento: dto.referenciaDocumento,
-      reciboS3Key: null,
-    }).save();
+    // 5. Crear pago y (si aplica) marcar orden interna como pagada — transacción atómica.
+    // Garantiza que no quede un pago sin orden ni una orden pagada sin registro en caja.
+    let pago!: PagoCajaDocument;
+    let ordenInternaWs: {
+      folio: string;
+      descripcion: string;
+      areaResponsable: string;
+      monto: number;
+      ciudadanoNombre: string;
+    } | null = null;
 
-    // 3.5 Si viene vinculada a una orden interna → marcar PAGADA y emitir WS
-    if (dto.ordenInternaId) {
-      const ordenInterna = await this.ordenPagoModel
-        .findOne({
-          _id: new Types.ObjectId(dto.ordenInternaId),
-          municipioId: new Types.ObjectId(municipioId),
-          tipo: TipoOrden.INTERNA,
-          estado: OrdenPagoStatus.PENDIENTE,
-        })
-        .populate('ciudadanoId', 'nombre apellidoPaterno')
-        .lean();
+    const session = await this.connection.startSession();
+    session.startTransaction();
+    try {
+      pago = await new this.pagoCajaModel({
+        municipioId: new Types.ObjectId(municipioId),
+        folio,
+        servicioId: new Types.ObjectId(dto.servicioId),
+        servicioNombre: (servicio as any).nombre, // snapshot
+        servicioCategoria: (servicio as any).categoria, // snapshot
+        servicioAreaResponsable: (servicio as any).areaResponsable ?? null, // snapshot
+        ciudadanoId: dto.ciudadanoId
+          ? new Types.ObjectId(dto.ciudadanoId)
+          : null,
+        nombreContribuyente: dto.nombreContribuyente ?? null,
+        monto: dto.monto,
+        subtotal,
+        contribucion,
+        porcentajeContribucion, // snapshot
+        metodoPago: dto.metodoPago,
+        estado: 'PAGADO',
+        canal: CanalPago.CAJA,
+        cajeroId: new Types.ObjectId(cajeroId),
+        cajeroNombre, // snapshot
+        fechaPago: new Date(),
+        observaciones: dto.observaciones,
+        referenciaDocumento: dto.referenciaDocumento,
+        reciboS3Key: null,
+      }).save({ session });
 
-      if (ordenInterna) {
-        await this.ordenPagoModel.updateOne(
-          { _id: ordenInterna._id },
-          { estado: OrdenPagoStatus.PAGADA, usadaAt: new Date() },
-        );
+      // 3.5 Si viene vinculada a una orden interna → marcar PAGADA dentro de la misma sesión
+      if (dto.ordenInternaId) {
+        const ordenActualizada = await this.ordenPagoModel
+          .findOneAndUpdate(
+            {
+              _id: new Types.ObjectId(dto.ordenInternaId),
+              municipioId: new Types.ObjectId(municipioId),
+              tipo: TipoOrden.INTERNA,
+              estado: OrdenPagoStatus.PENDIENTE,
+            },
+            { estado: OrdenPagoStatus.PAGADA, usadaAt: new Date() },
+            { session, new: true },
+          )
+          .populate('ciudadanoId', 'nombre apellidoPaterno')
+          .lean();
 
-        const ciudadanoDoc = ordenInterna.ciudadanoId as any;
-        const ciudadanoNombreWs = ciudadanoDoc
-          ? `${ciudadanoDoc.nombre ?? ''} ${ciudadanoDoc.apellidoPaterno ?? ''}`.trim()
-          : 'Ciudadano';
+        if (!ordenActualizada) {
+          throw new BadRequestException(
+            'La orden ya fue cobrada o no está en estado pendiente',
+          );
+        }
 
-        this.sagimGateway.emitOrdenPagada(municipioId, {
-          folioOrden: (ordenInterna as any).folio,
-          ciudadano: ciudadanoNombreWs,
-          servicio: (ordenInterna as any).descripcion ?? '',
-          areaResponsable: (ordenInterna as any).areaResponsable,
-          monto: (ordenInterna as any).monto,
-          timestamp: new Date(),
-        });
+        const ciudadanoDoc = (ordenActualizada as any).ciudadanoId as any;
+        ordenInternaWs = {
+          folio: (ordenActualizada as any).folio,
+          descripcion: (ordenActualizada as any).descripcion ?? '',
+          areaResponsable: (ordenActualizada as any).areaResponsable,
+          monto: (ordenActualizada as any).monto,
+          ciudadanoNombre: ciudadanoDoc
+            ? `${ciudadanoDoc.nombre ?? ''} ${ciudadanoDoc.apellidoPaterno ?? ''}`.trim()
+            : 'Ciudadano',
+        };
       }
+
+      await session.commitTransaction();
+    } catch (e) {
+      await session.abortTransaction();
+      throw e;
+    } finally {
+      session.endSession();
+    }
+
+    // Emitir WS de orden pagada (post-commit, fuera de la transacción)
+    if (ordenInternaWs) {
+      this.sagimGateway.emitOrdenPagada(municipioId, {
+        folioOrden: ordenInternaWs.folio,
+        ciudadano: ordenInternaWs.ciudadanoNombre,
+        servicio: ordenInternaWs.descripcion,
+        areaResponsable: ordenInternaWs.areaResponsable,
+        monto: ordenInternaWs.monto,
+        timestamp: new Date(),
+      });
     }
 
     // 4. Generar PDF del recibo y subir a S3
     // Si falla (S3 caído, etc.) el pago queda guardado — se puede regenerar después
+
+    // Resolver nombre del ciudadano para WS antes del try/catch
+    // (necesario en ambos paths: éxito y fallo de PDF)
+    let ciudadanoNombreWs = 'Sin nombre';
+    if (dto.ciudadanoId) {
+      const cWs = await this.ciudadanoModel
+        .findById(dto.ciudadanoId, 'nombre apellidoPaterno apellidoMaterno')
+        .lean();
+      if (cWs) {
+        ciudadanoNombreWs = [
+          cWs.nombre,
+          (cWs as any).apellidoPaterno,
+          (cWs as any).apellidoMaterno,
+        ]
+          .filter(Boolean)
+          .join(' ')
+          .toUpperCase();
+      }
+    } else if (dto.nombreContribuyente) {
+      ciudadanoNombreWs = dto.nombreContribuyente.toUpperCase();
+    }
+
     try {
       // municipio ya fue consultado antes de crear el pago
       const municipioNombre = (municipio as any)?.nombre ?? 'Municipio';
@@ -1391,10 +1479,40 @@ export class TesoreriaService {
       this.sagimGateway.emitPagoCaja(municipioId, {
         folio: pago.folio,
         servicio: (servicio as any).nombre,
+        ciudadano: ciudadanoNombreWs,
         monto: pago.monto,
         metodoPago: dto.metodoPago,
         timestamp: pago.fechaPago,
       });
+
+      // Emitir actividad reciente al dashboard presidencial
+      this.sagimGateway.emitActividadReciente(municipioId, {
+        folio: pago.folio,
+        servicio: (servicio as any).nombre,
+        ciudadano: ciudadanoNombreWs,
+        monto: pago.monto,
+        canal: 'Caja',
+        timestamp: pago.fechaPago,
+      });
+
+      // Actualizar dashboard de tesorería en tiempo real (fire-and-forget)
+      void this.dashboardService
+        .getDashboardTesoreriaSnapshot(municipioId)
+        .then((snapshot) =>
+          this.sagimGateway.emitDashboardTesoreriaUpdate(municipioId, snapshot),
+        )
+        .catch(() => {});
+
+      // Actualizar dashboard presidencial en tiempo real (fire-and-forget)
+      void this.dashboardService
+        .getDashboardPresidencialSnapshot(municipioId)
+        .then((snapshot) =>
+          this.sagimGateway.emitDashboardPresidencialUpdate(
+            municipioId,
+            snapshot,
+          ),
+        )
+        .catch(() => {});
 
       return { ...pago.toObject(), reciboUrl };
     } catch (err) {
@@ -1407,10 +1525,40 @@ export class TesoreriaService {
       this.sagimGateway.emitPagoCaja(municipioId, {
         folio: pago.folio,
         servicio: (servicio as any).nombre,
+        ciudadano: ciudadanoNombreWs,
         monto: pago.monto,
         metodoPago: dto.metodoPago,
         timestamp: pago.fechaPago,
       });
+
+      // Emitir actividad reciente al dashboard presidencial
+      this.sagimGateway.emitActividadReciente(municipioId, {
+        folio: pago.folio,
+        servicio: (servicio as any).nombre,
+        ciudadano: ciudadanoNombreWs,
+        monto: pago.monto,
+        canal: 'Caja',
+        timestamp: pago.fechaPago,
+      });
+
+      // Actualizar dashboard de tesorería en tiempo real (fire-and-forget)
+      void this.dashboardService
+        .getDashboardTesoreriaSnapshot(municipioId)
+        .then((snapshot) =>
+          this.sagimGateway.emitDashboardTesoreriaUpdate(municipioId, snapshot),
+        )
+        .catch(() => {});
+
+      // Actualizar dashboard presidencial en tiempo real (fire-and-forget)
+      void this.dashboardService
+        .getDashboardPresidencialSnapshot(municipioId)
+        .then((snapshot) =>
+          this.sagimGateway.emitDashboardPresidencialUpdate(
+            municipioId,
+            snapshot,
+          ),
+        )
+        .catch(() => {});
 
       return { ...pago.toObject(), reciboUrl: null };
     }

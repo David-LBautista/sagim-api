@@ -32,5 +32,6 @@ import { AuditoriaModule } from '@/modules/auditoria/auditoria.module';
   ],
   controllers: [DashboardController, DashboardAuditoriaController],
   providers: [DashboardService],
+  exports: [DashboardService],
 })
 export class DashboardModule {}

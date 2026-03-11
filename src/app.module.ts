@@ -28,6 +28,7 @@ import { AuditoriaModule } from './modules/auditoria/auditoria.module';
 import { ModulosModule } from './modules/modulos/modulos.module';
 import { CatalogosModule } from './modules/catalogos/catalogos.module';
 import { DifReportesModule } from './modules/dif/reportes/dif-reportes.module';
+import { CitasModule } from './modules/citas/citas.module';
 
 @Module({
   imports: [
@@ -77,6 +78,7 @@ import { DifReportesModule } from './modules/dif/reportes/dif-reportes.module';
     ModulosModule,
     CatalogosModule,
     DifReportesModule,
+    CitasModule,
   ],
   controllers: [AppController],
   providers: [

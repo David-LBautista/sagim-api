@@ -11,6 +11,25 @@ export interface HeaderData {
 }
 
 /**
+ * Devuelve una función dinámica de header para pdfmake.
+ * El logo solo se renderiza en la primera página; el resto usa mayor margen
+ * superior para mantener el mismo espacio reservado por pageMargins.
+ */
+export function buildHeaderFn(
+  data: HeaderData,
+): (currentPage: number, pageCount: number) => Content {
+  return (currentPage: number) => {
+    const esPrimeraPagina = currentPage === 1;
+    // page 1: margin normal; page 2+: compensar la altura del logo (~64px)
+    const topMargin = esPrimeraPagina ? 16 : 80;
+    return {
+      margin: [40, topMargin, 40, 0],
+      stack: buildHeader({ ...data, logoBase64: esPrimeraPagina ? data.logoBase64 : undefined }),
+    } as Content;
+  };
+}
+
+/**
  * Encabezado estándar para todos los reportes DIF.
  * Devuelve un arreglo Content[] para usar dentro del docDefinition.
  */

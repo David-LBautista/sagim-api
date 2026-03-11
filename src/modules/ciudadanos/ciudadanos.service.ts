@@ -125,6 +125,23 @@ export class CiudadanosService {
   // FIND ONE / BUSCAR / BY CURP
   // ─────────────────────────────────────────────────────
 
+  /**
+   * Verifica si existe un ciudadano por CURP sin lanzar excepción.
+   * Usado por el flujo del dialog de beneficiarios para pre-rellenar campos.
+   */
+  async verificarCurp(
+    curp: string,
+    scope: any,
+  ): Promise<{ existe: boolean; ciudadano: CiudadanoDocument | null }> {
+    const ciudadano = await this.ciudadanoModel
+      .findOne({ curp: curp.toUpperCase(), ...scope })
+      .lean();
+    return {
+      existe: !!ciudadano,
+      ciudadano: (ciudadano as unknown as CiudadanoDocument) ?? null,
+    };
+  }
+
   async findByCurp(curp: string, scope: any): Promise<CiudadanoDocument> {
     const ciudadano = await this.ciudadanoModel
       .findOne({ curp: curp.toUpperCase(), ...scope })

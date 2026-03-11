@@ -27,7 +27,7 @@ import {
 import { S3Service } from '@/modules/s3/s3.service';
 
 import { FiltrosReporteDto } from './dto/filtros-reporte.dto';
-import { buildHeader } from './templates/header.template';
+import { buildHeader, buildHeaderFn } from './templates/header.template';
 import { folioExtendido } from '@/shared/helpers/folio.helper';
 import { buildFooter } from './templates/footer.template';
 import { estilosDIF } from './templates/estilos.template';
@@ -129,34 +129,29 @@ export class DifReportesService {
         ? 'landscape'
         : 'portrait',
       pageMargins: [30, 145, 30, 40],
-      header: {
-        margin: [40, 16, 40, 0],
-        stack: buildHeader({
-          municipioNombre: municipioNombreReal,
-          logoBase64,
-          tipoReporte: tituloReporte,
-          fechaInicio: filtros.fechaInicio,
-          fechaFin: filtros.fechaFin,
-          generadoEn: fecha.ahoraEnMexico().toDate(),
-          orientacion: [
-            'fondos',
-            'inventario',
-            'apoyos',
-            'beneficiarios',
-          ].includes(tipo)
-            ? 'landscape'
-            : 'portrait',
-        }),
-      },
+      header: buildHeaderFn({
+        municipioNombre: municipioNombreReal,
+        logoBase64,
+        tipoReporte: tituloReporte,
+        fechaInicio: filtros.fechaInicio,
+        fechaFin: filtros.fechaFin,
+        generadoEn: fecha.ahoraEnMexico().toDate(),
+        orientacion: [
+          'fondos',
+          'inventario',
+          'apoyos',
+          'beneficiarios',
+        ].includes(tipo)
+          ? 'landscape'
+          : 'portrait',
+      }),
       footer: buildFooter(),
       styles: estilosDIF,
       defaultStyle: {
         font: 'Roboto',
         fontSize: 9,
       },
-      content: [
-        ...content,
-      ],
+      content: [...content],
     };
 
     // 3. Generar buffer PDF

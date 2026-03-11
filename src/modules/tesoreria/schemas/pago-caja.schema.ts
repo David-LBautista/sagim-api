@@ -22,6 +22,9 @@ export class PagoCaja {
   @Prop({ required: true })
   servicioCategoria: string; // Snapshot igual
 
+  @Prop()
+  servicioAreaResponsable?: string; // Snapshot — para agrupar ingresos por área en el dashboard
+
   // ==================== CIUDADANO ====================
   @Prop({ type: Types.ObjectId, ref: 'Ciudadano', default: null })
   ciudadanoId: Types.ObjectId | null;

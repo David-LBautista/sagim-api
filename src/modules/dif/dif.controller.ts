@@ -11,8 +11,10 @@ import {
   UploadedFile,
   HttpCode,
   HttpStatus,
+  Res,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
+import { Response } from 'express';
 import { DifService } from './dif.service';
 import {
   CreateBeneficiarioDto,
@@ -38,6 +40,7 @@ import {
   ApiQuery,
   ApiConsumes,
   ApiBody,
+  ApiResponse,
 } from '@nestjs/swagger';
 
 @ApiTags('DIF')
@@ -108,6 +111,11 @@ export class DifController {
     required: false,
     description: 'ID del programa DIF',
   })
+  @ApiQuery({
+    name: 'grupoVulnerable',
+    required: false,
+    description: 'Grupo vulnerable (ej. ADULTO_MAYOR, DISCAPACIDAD, MUJER)',
+  })
   @ApiQuery({ name: 'page', required: false, example: 1 })
   @ApiQuery({ name: 'limit', required: false, example: 20 })
   findBeneficiarios(
@@ -121,6 +129,7 @@ export class DifController {
     @Query('edadMin') edadMin?: string,
     @Query('edadMax') edadMax?: string,
     @Query('programaId') programaId?: string,
+    @Query('grupoVulnerable') grupoVulnerable?: string,
     @Query('page') page?: string,
     @Query('limit') limit?: string,
   ) {
@@ -138,6 +147,7 @@ export class DifController {
         edadMin: edadMin ? parseInt(edadMin, 10) : undefined,
         edadMax: edadMax ? parseInt(edadMax, 10) : undefined,
         programaId,
+        grupoVulnerable,
       },
       pageNum,
       limitNum,
@@ -194,6 +204,68 @@ export class DifController {
     );
   }
 
+  @Get('beneficiarios/verificar-curp/:curp')
+  @Roles(UserRole.SUPER_ADMIN, UserRole.ADMIN_MUNICIPIO, UserRole.OPERATIVO)
+  @ApiOperation({
+    summary:
+      'Verificar si existe un beneficiario por CURP — siempre 200, nunca 404. Usar en dialogs de registro.',
+  })
+  @ApiResponse({
+    status: 200,
+    schema: {
+      example: {
+        existe: false,
+        beneficiario: null,
+      },
+    },
+  })
+  verificarBeneficiarioCurp(
+    @Param('curp') curp: string,
+    @TenantScope() scope: any,
+  ) {
+    return this.difService.verificarBeneficiarioCurp(curp, scope);
+  }
+
+  @Get('beneficiarios/estadisticas')
+  @Roles(UserRole.SUPER_ADMIN, UserRole.ADMIN_MUNICIPIO, UserRole.OPERATIVO)
+  @ApiOperation({
+    summary: 'Estadísticas del padrón — tarjetas del dashboard DIF',
+  })
+  estadisticasBeneficiarios(@TenantScope() scope: any) {
+    return this.difService.estadisticasBeneficiarios(scope);
+  }
+
+  @Get('beneficiarios/exportar')
+  @Roles(UserRole.SUPER_ADMIN, UserRole.ADMIN_MUNICIPIO, UserRole.OPERATIVO)
+  @ApiOperation({ summary: 'Exportar padrón de beneficiarios a Excel (.xlsx)' })
+  @ApiQuery({ name: 'search', required: false })
+  @ApiQuery({ name: 'grupoVulnerable', required: false })
+  @ApiQuery({ name: 'programaId', required: false })
+  @ApiQuery({ name: 'activo', required: false, enum: ['true', 'false'] })
+  async exportarBeneficiarios(
+    @TenantScope() scope: any,
+    @Query('search') search: string,
+    @Query('grupoVulnerable') grupoVulnerable: string,
+    @Query('programaId') programaId: string,
+    @Query('activo') activo: string,
+    @Res() res: Response,
+  ) {
+    const buffer = await this.difService.exportarBeneficiarios(scope, {
+      search,
+      grupoVulnerable,
+      programaId,
+      activo,
+    });
+    const hoy = new Date().toISOString().split('T')[0];
+    res.set({
+      'Content-Type':
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'Content-Disposition': `attachment; filename="padron-beneficiarios-${hoy}.xlsx"`,
+      'Content-Length': buffer.length,
+    });
+    res.end(buffer);
+  }
+
   @Get('beneficiarios/curp/:curp')
   @Roles(UserRole.SUPER_ADMIN, UserRole.ADMIN_MUNICIPIO, UserRole.OPERATIVO)
   @ApiOperation({
@@ -229,13 +301,19 @@ export class DifController {
   updateBeneficiario(
     @Param('id') id: string,
     @Body() updateBeneficiarioDto: UpdateBeneficiarioDto,
-    @MunicipalityId() municipioId: string,
+    @TenantScope() scope: any,
   ) {
-    return this.difService.updateBeneficiario(
-      id,
-      updateBeneficiarioDto,
-      municipioId,
-    );
+    return this.difService.updateBeneficiario(id, updateBeneficiarioDto, scope);
+  }
+
+  @Patch('beneficiarios/:id/desactivar')
+  @Roles(UserRole.SUPER_ADMIN, UserRole.ADMIN_MUNICIPIO, UserRole.OPERATIVO)
+  @ApiOperation({
+    summary:
+      'Baja lógica del beneficiario (activo: false). Historial de apoyos queda intacto.',
+  })
+  desactivarBeneficiario(@Param('id') id: string, @TenantScope() scope: any) {
+    return this.difService.desactivarBeneficiario(id, scope);
   }
 
   // ==================== PROGRAMAS ====================
@@ -298,6 +376,45 @@ export class DifController {
     @Query('to') to?: string,
   ) {
     return this.difService.findApoyos(scope, curp, programaId, from, to);
+  }
+
+  @Get('apoyos/exportar')
+  @Roles(UserRole.SUPER_ADMIN, UserRole.ADMIN_MUNICIPIO, UserRole.OPERATIVO)
+  @ApiOperation({ summary: 'Exportar historial de apoyos a Excel (.xlsx)' })
+  @ApiQuery({ name: 'programaId', required: false })
+  @ApiQuery({ name: 'curp', required: false })
+  @ApiQuery({
+    name: 'from',
+    required: false,
+    description: 'Fecha inicial YYYY-MM-DD',
+  })
+  @ApiQuery({
+    name: 'to',
+    required: false,
+    description: 'Fecha final YYYY-MM-DD',
+  })
+  async exportarApoyos(
+    @TenantScope() scope: any,
+    @Query('programaId') programaId: string,
+    @Query('curp') curp: string,
+    @Query('from') from: string,
+    @Query('to') to: string,
+    @Res() res: Response,
+  ) {
+    const buffer = await this.difService.exportarApoyos(scope, {
+      curp,
+      programaId,
+      from,
+      to,
+    });
+    const hoy = new Date().toISOString().split('T')[0];
+    res.set({
+      'Content-Type':
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'Content-Disposition': `attachment; filename="apoyos-dif-${hoy}.xlsx"`,
+      'Content-Length': buffer.length,
+    });
+    res.end(buffer);
   }
 
   @Get('apoyos/dashboard')

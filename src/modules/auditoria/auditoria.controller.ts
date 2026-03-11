@@ -48,13 +48,27 @@ export class AuditoriaController {
    * Bitácora detallada con filtros (CONTRALORÍA)
    */
   @Get('logs')
-  @ApiOperation({ summary: 'Obtener bitácora de auditoría con filtros' })
+  @ApiOperation({
+    summary: 'Obtener bitácora de auditoría con filtros (paginado)',
+  })
   @ApiQuery({ name: 'modulo', required: false, enum: AuditModule })
   @ApiQuery({ name: 'usuarioId', required: false })
   @ApiQuery({ name: 'accion', required: false, enum: AuditAction })
   @ApiQuery({ name: 'entidad', required: false })
-  @ApiQuery({ name: 'desde', required: false, example: '2026-01-01' })
+  @ApiQuery({
+    name: 'desde',
+    required: false,
+    example: '2026-01-01',
+    description: 'Default: últimos 7 días',
+  })
   @ApiQuery({ name: 'hasta', required: false, example: '2026-01-31' })
+  @ApiQuery({ name: 'page', required: false, example: 1 })
+  @ApiQuery({
+    name: 'limit',
+    required: false,
+    example: 50,
+    description: 'Máximo 200',
+  })
   @Roles(UserRole.SUPER_ADMIN, UserRole.ADMIN_MUNICIPIO)
   async getLogs(
     @MunicipalityId() municipioId: string,
@@ -64,6 +78,8 @@ export class AuditoriaController {
     @Query('entidad') entidad?: string,
     @Query('desde') desde?: string,
     @Query('hasta') hasta?: string,
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
   ) {
     const filters: any = {};
     if (modulo) filters.modulo = modulo;
@@ -72,6 +88,8 @@ export class AuditoriaController {
     if (entidad) filters.entidad = entidad;
     if (desde) filters.fechaDesde = new Date(desde);
     if (hasta) filters.fechaHasta = new Date(hasta);
+    filters.page = page ? parseInt(page, 10) : 1;
+    filters.limit = limit ? parseInt(limit, 10) : 50;
 
     return this.auditoriaService.findAll(municipioId, filters);
   }

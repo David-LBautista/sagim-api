@@ -16,6 +16,7 @@ import {
   ServicioCobro,
   ServicioCobroSchema,
 } from '@/modules/tesoreria/schemas/servicio-cobro.schema';
+import { Counter, CounterSchema } from '@/modules/dif/schemas/counter.schema';
 import { NotificacionesModule } from '@/modules/notificaciones/notificaciones.module';
 import { PdfModule } from '@/modules/shared/pdf/pdf.module';
 import { OrdenesExpiracionTask } from './tasks/ordenes-expiracion.task';
@@ -28,6 +29,7 @@ import { OrdenesExpiracionTask } from './tasks/ordenes-expiracion.task';
       { name: Municipality.name, schema: MunicipalitySchema },
       { name: Ciudadano.name, schema: CiudadanoSchema },
       { name: ServicioCobro.name, schema: ServicioCobroSchema },
+      { name: Counter.name, schema: CounterSchema },
     ]),
     NotificacionesModule,
     PdfModule,

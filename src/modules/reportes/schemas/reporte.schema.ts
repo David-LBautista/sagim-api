@@ -66,16 +66,4 @@ ReporteSchema.index({ estado: 1 });
 ReporteSchema.index({ folio: 1 }, { unique: true });
 ReporteSchema.index({ createdAt: -1 });
 
-// Pre-save hook to generate folio
-ReporteSchema.pre('save', async function (next) {
-  if (!this.folio) {
-    const date = new Date();
-    const year = date.getFullYear().toString().slice(-2);
-    const month = (date.getMonth() + 1).toString().padStart(2, '0');
-    const random = Math.floor(Math.random() * 10000)
-      .toString()
-      .padStart(4, '0');
-    this.folio = `REP-${year}${month}-${random}`;
-  }
-  next();
-});
+// Folio is generated atomically by ReportesService.create() — no pre-save hook needed

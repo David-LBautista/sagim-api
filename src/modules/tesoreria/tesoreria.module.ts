@@ -21,6 +21,7 @@ import { S3Module } from '../s3/s3.module';
 import { Counter, CounterSchema } from '../dif/schemas/counter.schema';
 import { PdfModule } from '../shared/pdf/pdf.module';
 import { NotificacionesModule } from '../notificaciones/notificaciones.module';
+import { DashboardModule } from '../dashboard/dashboard.module';
 
 @Module({
   imports: [
@@ -36,6 +37,7 @@ import { NotificacionesModule } from '../notificaciones/notificaciones.module';
     S3Module,
     PdfModule,
     NotificacionesModule,
+    DashboardModule,
   ],
   controllers: [TesoreriaController],
   providers: [TesoreriaService],

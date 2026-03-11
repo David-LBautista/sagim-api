@@ -36,8 +36,8 @@ export class DashboardService {
 
   async getResumenTesoreria(municipioId: string) {
     const municipioObjectId = new Types.ObjectId(municipioId);
-    const now = new Date();
-    const mesActual = fecha.inicioMes(now.getMonth() + 1, now.getFullYear());
+    const hoyMx = fecha.ahoraEnMexico();
+    const mesActual = hoyMx.startOf('month').utc().toDate();
 
     const [pagosStats, ordenesStats, serviciosActivos] = await Promise.all([
       this.pagoModel.aggregate([
@@ -87,22 +87,22 @@ export class DashboardService {
       pagosRealizados: stats.pagosRealizados,
       pagosPendientes: ordenesStats,
       serviciosActivos: serviciosActivos,
-      periodo: mesActual.toISOString().substring(0, 7), // "2026-01"
+      periodo: hoyMx.format('YYYY-MM'),
     };
   }
 
   async getIngresos(municipioId: string, desde?: string, hasta?: string) {
     const municipioObjectId = new Types.ObjectId(municipioId);
 
-    // Usar UTC para evitar desfase de zona horaria
-    let fechaDesde: Date;
-    let fechaHasta: Date;
-
-    const hoy = new Date();
-    fechaDesde = desde
-      ? fecha.inicioDia(desde)
-      : fecha.inicioMes(hoy.getMonth() + 1, hoy.getFullYear());
-    fechaHasta = hasta ? fecha.finDia(hasta) : fecha.finDia(hoy);
+    // Parsear strings YYYY-MM-DD directamente en zona México para evitar
+    // desfase: dayjs(str).tz() convertiría primero a UTC local del server.
+    const hoyMx = fecha.ahoraEnMexico();
+    const fechaDesde: Date = desde
+      ? fecha.parsearFecha(desde)
+      : fecha.inicioMes(hoyMx.month() + 1, hoyMx.year());
+    const fechaHasta: Date = hasta
+      ? fecha.parsearFechaFin(hasta)
+      : fecha.parsearFechaFin(hoyMx.format('YYYY-MM-DD'));
 
     const ingresos = await this.pagoModel.aggregate([
       {
@@ -129,7 +129,11 @@ export class DashboardService {
       {
         $group: {
           _id: {
-            $dateToString: { format: '%Y-%m-%d', date: '$fechaPago' },
+            $dateToString: {
+              format: '%Y-%m-%d',
+              date: '$fechaPago',
+              timezone: 'America/Mexico_City',
+            },
           },
           monto: { $sum: '$monto' },
         },
@@ -185,11 +189,11 @@ export class DashboardService {
       },
       {
         $project: {
-          // Prioridad: areaResponsable del catálogo → areaResponsable de la orden → SIN_AREA
+          // Prioridad: areaResponsable del catálogo → areaResponsable de la orden → Sin área
           area: {
             $ifNull: [
               '$servicio.areaResponsable',
-              { $ifNull: ['$orden.areaResponsable', 'SIN_AREA'] },
+              { $ifNull: ['$orden.areaResponsable', 'Sin área'] },
             ],
           },
           monto: 1,
@@ -205,22 +209,11 @@ export class DashboardService {
                 estado: 'PAGADO',
               },
             },
-            // Lookup areaResponsable desde el catálogo de servicios
-            {
-              $lookup: {
-                from: 'tesoreria_servicios_cobro',
-                localField: 'servicioId',
-                foreignField: '_id',
-                as: 'servicio',
-              },
-            },
-            {
-              $unwind: { path: '$servicio', preserveNullAndEmptyArrays: true },
-            },
+            // servicioAreaResponsable es snapshot guardado en el pago — no necesita lookup
             {
               $project: {
                 area: {
-                  $ifNull: ['$servicio.areaResponsable', 'SIN_AREA'],
+                  $ifNull: ['$servicioAreaResponsable', 'Sin área'],
                 },
                 monto: 1,
               },
@@ -338,18 +331,20 @@ export class DashboardService {
   async getComparativoMensual(municipioId: string, meses: number) {
     const municipioObjectId = new Types.ObjectId(municipioId);
 
-    const hoyComp = new Date();
-    const mesBase = hoyComp.getMonth() + 1 - meses;
-    const anioBase = hoyComp.getFullYear() + Math.floor((mesBase - 1) / 12);
-    const mesNorm = ((mesBase - 1 + 120) % 12) + 1;
-    const fechaInicio = fecha.inicioMes(mesNorm, anioBase);
+    // Calcular rango usando dayjs en zona México
+    const hoyMx = fecha.ahoraEnMexico();
+    const inicioRango = hoyMx
+      .subtract(meses - 1, 'month')
+      .startOf('month')
+      .utc()
+      .toDate();
 
-    const comparativo = await this.pagoModel.aggregate([
+    const pagosRaw = await this.pagoModel.aggregate([
       {
         $match: {
           municipioId: municipioObjectId,
           estado: 'PAGADO',
-          fechaPago: { $gte: fechaInicio },
+          fechaPago: { $gte: inicioRango },
         },
       },
       {
@@ -360,7 +355,7 @@ export class DashboardService {
               $match: {
                 municipioId: municipioObjectId,
                 estado: 'PAGADO',
-                fechaPago: { $gte: fechaInicio },
+                fechaPago: { $gte: inicioRango },
               },
             },
           ],
@@ -369,24 +364,98 @@ export class DashboardService {
       {
         $group: {
           _id: {
-            $dateToString: { format: '%Y-%m', date: '$fechaPago' },
+            $dateToString: {
+              format: '%Y-%m',
+              date: '$fechaPago',
+              timezone: 'America/Mexico_City',
+            },
           },
           monto: { $sum: '$monto' },
         },
       },
-      {
-        $sort: { _id: 1 },
-      },
-      {
-        $project: {
-          _id: 0,
-          mes: '$_id',
-          monto: 1,
-        },
-      },
+      { $sort: { _id: 1 } },
+      { $project: { _id: 0, mes: '$_id', monto: 1 } },
     ]);
 
-    return comparativo;
+    // Rellenar meses sin pagos con monto: 0 para que el frontend
+    // siempre reciba exactamente `meses` puntos en la gráfica
+    const mapaResultados = new Map(pagosRaw.map((r) => [r.mes, r.monto]));
+    const resultado: { mes: string; monto: number }[] = [];
+
+    for (let i = meses - 1; i >= 0; i--) {
+      const clave = hoyMx.subtract(i, 'month').format('YYYY-MM');
+      resultado.push({ mes: clave, monto: mapaResultados.get(clave) ?? 0 });
+    }
+
+    return resultado;
+  }
+
+  /**
+   * Snapshot completo del dashboard de tesorería para envíar por WS after cada pago.
+   * El frontend lo usa para actualizar tarjetas + gráficas sin hacer HTTP.
+   */
+  async getDashboardTesoreriaSnapshot(municipioId: string) {
+    const [resumen, serviciosTop, ingresosPorArea] = await Promise.all([
+      this.getResumenTesoreria(municipioId),
+      this.getServiciosTop(municipioId, 5),
+      this.getIngresosPorArea(municipioId),
+    ]);
+    return { resumen, serviciosTop, ingresosPorArea };
+  }
+
+  /**
+   * Snapshot completo del dashboard presidencial.
+   * Cubre todas las secciones visibles: tesorería + DIF.
+   * Se envía por WS al room del municipio tras cada pago o apoyo registrado.
+   */
+  async getDashboardPresidencialSnapshot(municipioId: string) {
+    const hoyMx = fecha.ahoraEnMexico();
+    const inicioMes = hoyMx.startOf('month').format('YYYY-MM-DD');
+    const hoy = hoyMx.format('YYYY-MM-DD');
+
+    const [
+      resumenTesoreria,
+      ingresosHoy,
+      ingresosPorArea,
+      serviciosTop,
+      comparativoTesoreria,
+      alertasTesoreria,
+      resumenDIF,
+      apoyosPorPrograma,
+      beneficiariosPorLocalidad,
+      comparativoDIF,
+      alertasDIF,
+    ] = await Promise.all([
+      this.getResumenTesoreria(municipioId),
+      this.getIngresos(municipioId, inicioMes, hoy),
+      this.getIngresosPorArea(municipioId),
+      this.getServiciosTop(municipioId, 10),
+      this.getComparativoMensual(municipioId, 6),
+      this.getAlertasTesoreria(municipioId),
+      this.getResumenDIF(municipioId),
+      this.getApoyosPorPrograma(municipioId),
+      this.getBeneficiariosPorLocalidad(municipioId),
+      this.getComparativoMensualDIF(municipioId, 6),
+      this.getAlertasDIF(municipioId),
+    ]);
+
+    return {
+      tesoreria: {
+        resumen: resumenTesoreria,
+        ingresos: ingresosHoy,
+        ingresosPorArea,
+        serviciosTop,
+        comparativoMensual: comparativoTesoreria,
+        alertas: alertasTesoreria,
+      },
+      dif: {
+        resumen: resumenDIF,
+        apoyosPorPrograma,
+        beneficiariosPorLocalidad,
+        comparativoMensual: comparativoDIF,
+        alertas: alertasDIF,
+      },
+    };
   }
 
   async getAlertasTesoreria(municipioId: string) {
@@ -657,41 +726,46 @@ export class DashboardService {
   async getComparativoMensualDIF(municipioId: string, meses: number) {
     const municipioObjectId = new Types.ObjectId(municipioId);
 
-    const hoyDif = new Date();
-    const mesBaseDif = hoyDif.getMonth() + 1 - meses;
-    const anioBaseDif =
-      hoyDif.getFullYear() + Math.floor((mesBaseDif - 1) / 12);
-    const mesNormDif = ((mesBaseDif - 1 + 120) % 12) + 1;
-    const fechaInicio = fecha.inicioMes(mesNormDif, anioBaseDif);
+    const hoyMx = fecha.ahoraEnMexico();
+    const inicioRango = hoyMx
+      .subtract(meses - 1, 'month')
+      .startOf('month')
+      .utc()
+      .toDate();
 
-    const comparativo = await this.apoyoModel.aggregate([
+    const pagosRaw = await this.apoyoModel.aggregate([
       {
         $match: {
           municipioId: municipioObjectId,
-          fecha: { $gte: fechaInicio },
+          fecha: { $gte: inicioRango },
         },
       },
       {
         $group: {
           _id: {
-            $dateToString: { format: '%Y-%m', date: '$fecha' },
+            $dateToString: {
+              format: '%Y-%m',
+              date: '$fecha',
+              timezone: 'America/Mexico_City',
+            },
           },
           apoyos: { $count: {} },
         },
       },
-      {
-        $sort: { _id: 1 },
-      },
-      {
-        $project: {
-          _id: 0,
-          mes: '$_id',
-          apoyos: 1,
-        },
-      },
+      { $sort: { _id: 1 } },
+      { $project: { _id: 0, mes: '$_id', apoyos: 1 } },
     ]);
 
-    return comparativo;
+    // Rellenar meses vacíos con apoyos: 0
+    const mapaResultados = new Map(pagosRaw.map((r) => [r.mes, r.apoyos]));
+    const resultado: { mes: string; apoyos: number }[] = [];
+
+    for (let i = meses - 1; i >= 0; i--) {
+      const clave = hoyMx.subtract(i, 'month').format('YYYY-MM');
+      resultado.push({ mes: clave, apoyos: mapaResultados.get(clave) ?? 0 });
+    }
+
+    return resultado;
   }
 
   async getAlertasDIF(municipioId: string) {

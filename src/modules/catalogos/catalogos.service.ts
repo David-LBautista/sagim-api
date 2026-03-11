@@ -21,6 +21,10 @@ import {
 } from './schemas/grupo-vulnerable.schema';
 import { TipoApoyo, TipoApoyoDocument } from './schemas/tipo-apoyo.schema';
 import { Localidad, LocalidadDocument } from './schemas/localidad.schema';
+import {
+  CategoriaServicio,
+  CategoriaServicioDocument,
+} from './schemas/categoria-servicio.schema';
 import { UserRole } from '@/shared/enums';
 
 @Injectable()
@@ -42,6 +46,8 @@ export class CatalogosService {
     private tipoApoyoModel: Model<TipoApoyoDocument>,
     @InjectModel(Localidad.name)
     private localidadModel: Model<LocalidadDocument>,
+    @InjectModel(CategoriaServicio.name)
+    private categoriaServicioModel: Model<CategoriaServicioDocument>,
   ) {}
 
   async getEstados() {
@@ -240,5 +246,40 @@ export class CatalogosService {
     }
 
     return { insertadas, errores };
+  }
+
+  // ==================== CATEGORÍAS DE SERVICIOS ====================
+
+  async getCategoriasServicios(): Promise<CategoriaServicio[]> {
+    return this.categoriaServicioModel
+      .find({ activo: true })
+      .select('-__v')
+      .sort({ orden: 1, nombre: 1 })
+      .lean() as unknown as CategoriaServicio[];
+  }
+
+  async getCategoriaServicioByNombre(
+    nombre: string,
+  ): Promise<CategoriaServicio> {
+    const categoria = await this.categoriaServicioModel
+      .findOne({ nombre, activo: true })
+      .select('-__v')
+      .lean();
+
+    if (!categoria) {
+      throw new NotFoundException(
+        `Categoría de servicio "${nombre}" no encontrada`,
+      );
+    }
+
+    return categoria as unknown as CategoriaServicio;
+  }
+
+  async getAreasResponsablesServicios(): Promise<string[]> {
+    const areas = await this.categoriaServicioModel.distinct(
+      'areaResponsable',
+      { activo: true },
+    );
+    return (areas as string[]).filter(Boolean).sort();
   }
 }

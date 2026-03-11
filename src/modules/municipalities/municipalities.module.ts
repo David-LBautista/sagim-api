@@ -7,6 +7,7 @@ import {
 import { Programa, ProgramaSchema } from '../dif/schemas/programa.schema';
 import { User, UserSchema } from '../users/schemas/user.schema';
 import { MunicipalitiesController } from './municipalities.controller';
+import { MunicipalitiesPublicoController } from './municipalities-publico.controller';
 import { MunicipalitiesService } from './municipalities.service';
 import { CloudinaryModule } from '../cloudinary/cloudinary.module';
 
@@ -19,7 +20,7 @@ import { CloudinaryModule } from '../cloudinary/cloudinary.module';
     ]),
     CloudinaryModule,
   ],
-  controllers: [MunicipalitiesController],
+  controllers: [MunicipalitiesController, MunicipalitiesPublicoController],
   providers: [MunicipalitiesService],
   exports: [MongooseModule],
 })
