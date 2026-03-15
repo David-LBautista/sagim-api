@@ -908,6 +908,9 @@ export class ReportesService {
         folio: r.folio,
         categoriaNombre: r.categoriaNombre,
         ubicacion: r.ubicacion?.descripcion ?? '',
+        colonia: r.ubicacion?.colonia ?? '',
+        lat: r.ubicacion?.latitud ?? null,
+        lng: r.ubicacion?.longitud ?? null,
         fechaResolucion: r.fechaResolucion,
       })),
     };
