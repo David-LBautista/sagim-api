@@ -95,11 +95,21 @@ export class CitasService {
   async resolverMunicipio(
     slug: string,
   ): Promise<{ _id: unknown; nombre: string; claveInegi?: string }> {
+    const normalizado = slug.replace(/-/g, ' ');
+    const sinEspacios = slug.replace(/-/g, '').replace(/\s/g, '').toLowerCase();
     const municipio = await this.municipioModel
       .findOne({
         $or: [
           { claveInegi: slug },
-          { nombre: { $regex: `^${slug.replace(/-/g, ' ')}$`, $options: 'i' } },
+          { nombre: { $regex: `^${normalizado}$`, $options: 'i' } },
+          {
+            $expr: {
+              $regexMatch: {
+                input: { $replaceAll: { input: { $toLower: '$nombre' }, find: ' ', replacement: '' } },
+                regex: `^${sinEspacios}$`,
+              },
+            },
+          },
         ],
         activo: true,
       })
