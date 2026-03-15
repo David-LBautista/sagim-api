@@ -1,2 +1,2 @@
-export * from './create-reporte.dto';
+export * from './reportes.dto';
 export * from './update-reporte.dto';

@@ -1,11 +1,16 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Resend } from 'resend';
+import {
+  emailOrdenPago,
+  emailPagoConfirmado,
+} from '../../common/helpers/email.helper';
 
 export interface EnviarLinkPagoParams {
   email: string;
   nombreCiudadano: string;
   municipioNombre: string;
+  municipioLogoUrl?: string;
   descripcion: string;
   monto: number;
   urlPago: string;
@@ -16,6 +21,7 @@ export interface EnviarConfirmacionPagoParams {
   email: string;
   nombreCiudadano: string;
   municipioNombre: string;
+  municipioLogoUrl?: string;
   descripcion: string;
   folio: string;
   monto: number;
@@ -41,11 +47,31 @@ export class NotificacionesService {
    */
   async enviarLinkPago(params: EnviarLinkPagoParams): Promise<void> {
     try {
+      const expiraStr = params.expiraEn.toLocaleString('es-MX', {
+        timeZone: 'America/Mexico_City',
+        day: '2-digit',
+        month: 'long',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: true,
+      });
+      const html = emailOrdenPago({
+        municipioNombre: params.municipioNombre,
+        municipioCorreo: this.emailFrom,
+        logoUrl: params.municipioLogoUrl ?? '',
+        ciudadanoNombre: params.nombreCiudadano,
+        folio: '',
+        concepto: params.descripcion,
+        monto: `$${params.monto.toFixed(2)}`,
+        fechaVencimiento: expiraStr,
+        urlPagar: params.urlPago,
+      });
       await this.resend.emails.send({
         from: `${params.municipioNombre} <${this.emailFrom}>`,
         to: params.email,
         subject: `Orden de pago — ${params.descripcion}`,
-        html: this.templateLinkPago(params),
+        html,
       });
       this.logger.log(
         `Email de pago enviado a ${params.email} — ${params.descripcion}`,
@@ -66,11 +92,35 @@ export class NotificacionesService {
     params: EnviarConfirmacionPagoParams,
   ): Promise<void> {
     try {
+      const TZ = 'America/Mexico_City';
+      const fechaStr = params.fechaPago.toLocaleDateString('es-MX', {
+        timeZone: TZ,
+        day: '2-digit',
+        month: 'long',
+        year: 'numeric',
+      });
+      const horaStr = params.fechaPago.toLocaleTimeString('es-MX', {
+        timeZone: TZ,
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: true,
+      });
+      const html = emailPagoConfirmado({
+        municipioNombre: params.municipioNombre,
+        municipioCorreo: this.emailFrom,
+        logoUrl: params.municipioLogoUrl ?? '',
+        ciudadanoNombre: params.nombreCiudadano,
+        folio: params.folio,
+        concepto: params.descripcion,
+        monto: `$${params.monto.toFixed(2)}`,
+        fechaPago: `${fechaStr} — ${horaStr}`,
+        urlRecibo: params.reciboUrl,
+      });
       await this.resend.emails.send({
         from: `${params.municipioNombre} <${this.emailFrom}>`,
         to: params.email,
         subject: `Confirmación de pago — ${params.folio}`,
-        html: this.templateConfirmacionPago(params),
+        html,
       });
       this.logger.log(
         `Email de confirmación enviado a ${params.email} — ${params.folio}`,
@@ -83,6 +133,7 @@ export class NotificacionesService {
     }
   }
 
+  // DEPRECATED — mantener por compatibilidad hasta refactor completo
   private templateConfirmacionPago(
     params: EnviarConfirmacionPagoParams,
   ): string {

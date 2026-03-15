@@ -469,6 +469,78 @@ export class SagimGateway implements OnGatewayConnection, OnGatewayDisconnect {
     );
   }
 
+  // ==================== EVENTOS DE REPORTES ====================
+
+  /**
+   * Nuevo reporte ciudadano creado.
+   * → Room `municipio:{municipioId}:reportes` (todos los operativos).
+   */
+  emitNuevoReporte(
+    municipioId: string,
+    data: {
+      folio: string;
+      categoria: string;
+      modulo: string;
+      areaResponsable: string;
+      ubicacion: string;
+      ciudadano: string;
+    },
+  ) {
+    const room = `municipio:${municipioId}:reportes`;
+    this.server
+      .to(room)
+      .emit('nuevo_reporte', {
+        ...data,
+        prioridad: 'normal',
+        timestamp: new Date(),
+      });
+    this.logger.log(`📡 [WS] nuevo_reporte → ${room} | ${data.folio}`);
+  }
+
+  /**
+   * Estado de reporte actualizado por funcionario.
+   * → Room `municipio:{municipioId}:reportes`.
+   */
+  emitReporteActualizado(
+    municipioId: string,
+    data: {
+      id?: string;
+      folio: string;
+      estado: string;
+      modulo?: string;
+      categoria?: string;
+      areaResponsable?: string;
+    },
+  ) {
+    const room = `municipio:${municipioId}:reportes`;
+    this.server
+      .to(room)
+      .emit('reporte_actualizado', { ...data, timestamp: new Date() });
+    this.logger.log(
+      `📡 [WS] reporte_actualizado → ${room} | ${data.folio} → ${data.estado}`,
+    );
+  }
+
+  /**
+   * Reporte asignado a un funcionario específico.
+   * → Room `usuario:{usuarioId}` (solo el asignado).
+   */
+  emitReporteAsignado(
+    usuarioId: string,
+    data: {
+      folio: string;
+      categoriaNombre: string;
+      ubicacion: string;
+      prioridad: string;
+    },
+  ) {
+    const room = `usuario:${usuarioId}`;
+    this.server
+      .to(room)
+      .emit('reporte_asignado', { ...data, timestamp: new Date() });
+    this.logger.log(`📡 [WS] reporte_asignado → ${room} | ${data.folio}`);
+  }
+
   // ==================== HELPERS ====================
 
   /** Normaliza el nombre de un área a un slug para el room de Socket.IO */

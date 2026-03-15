@@ -29,6 +29,8 @@ import { ModulosModule } from './modules/modulos/modulos.module';
 import { CatalogosModule } from './modules/catalogos/catalogos.module';
 import { DifReportesModule } from './modules/dif/reportes/dif-reportes.module';
 import { CitasModule } from './modules/citas/citas.module';
+import { PortalModule } from './modules/portal/portal.module';
+import { TransparenciaModule } from './modules/transparencia/transparencia.module';
 
 @Module({
   imports: [
@@ -79,6 +81,8 @@ import { CitasModule } from './modules/citas/citas.module';
     CatalogosModule,
     DifReportesModule,
     CitasModule,
+    PortalModule,
+    TransparenciaModule,
   ],
   controllers: [AppController],
   providers: [

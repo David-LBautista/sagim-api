@@ -32,6 +32,8 @@ class ModulosUpdateDto {
   @IsOptional() @IsBoolean() CITAS?: boolean;
   @IsOptional() @IsBoolean() REGISTRO_CIVIL?: boolean;
   @IsOptional() @IsBoolean() AUDITORIA?: boolean;
+  @IsOptional() @IsBoolean() PORTAL?: boolean;
+  @IsOptional() @IsBoolean() TRANSPARENCIA?: boolean;
 }
 
 class ConfigUpdateDto {

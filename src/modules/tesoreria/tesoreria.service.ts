@@ -341,28 +341,7 @@ export class TesoreriaService {
     const expiresAt = new Date();
     expiresAt.setHours(expiresAt.getHours() + horasValidez);
 
-    const ordenPago = new this.ordenPagoModel({
-      token,
-      municipioId: new Types.ObjectId(municipioId),
-      servicioId: new Types.ObjectId(createOrdenDto.servicioId),
-      ciudadanoId: createOrdenDto.ciudadanoId
-        ? new Types.ObjectId(createOrdenDto.ciudadanoId)
-        : undefined,
-      monto: createOrdenDto.monto,
-      descripcion: createOrdenDto.concepto,
-      folioDocumento: createOrdenDto.folioDocumento,
-      estado: OrdenPagoStatus.PENDIENTE,
-      creadaPorId: new Types.ObjectId(userId),
-      expiresAt,
-      metadata: {
-        emailCiudadano: createOrdenDto.emailCiudadano,
-        nombreContribuyente: createOrdenDto.nombreContribuyente,
-      },
-    });
-
-    const orden = await ordenPago.save();
-
-    // Resolver email y nombre para notificación
+    // Resolver email y nombre ANTES de guardar para persistirlo en metadata
     let emailDestino = createOrdenDto.emailCiudadano;
     let nombreCiudadano = createOrdenDto.nombreContribuyente || 'Ciudadano';
 
@@ -377,24 +356,45 @@ export class TesoreriaService {
         ]
           .filter(Boolean)
           .join(' ');
-        // Usar email del ciudadano si no se proporcionó uno explícito
         if (!emailDestino && (ciudadano as any).email) {
           emailDestino = (ciudadano as any).email;
         }
       }
     }
 
+    const ordenPago = new this.ordenPagoModel({
+      token,
+      municipioId: new Types.ObjectId(municipioId),
+      servicioId: new Types.ObjectId(createOrdenDto.servicioId),
+      ciudadanoId: createOrdenDto.ciudadanoId
+        ? new Types.ObjectId(createOrdenDto.ciudadanoId)
+        : undefined,
+      monto: createOrdenDto.monto,
+      descripcion: createOrdenDto.concepto,
+      folioDocumento: createOrdenDto.folioDocumento,
+      estado: OrdenPagoStatus.PENDIENTE,
+      creadaPorId: new Types.ObjectId(userId),
+      expiresAt,
+      metadata: {
+        emailCiudadano: emailDestino,
+        nombreContribuyente: createOrdenDto.nombreContribuyente,
+      },
+    });
+
+    const orden = await ordenPago.save();
+
     // Auto-enviar email si hay destino
     if (emailDestino) {
       const baseUrl = process.env.FRONTEND_URL || 'https://pagos.sagim.mx';
       const municipio = await this.municipalityModel
-        .findById(municipioId, 'nombre')
+        .findById(municipioId, 'nombre logoUrl')
         .lean();
 
       void this.notificacionesService.enviarLinkPago({
         email: emailDestino,
         nombreCiudadano,
         municipioNombre: (municipio as any)?.nombre ?? 'Municipio',
+        municipioLogoUrl: (municipio as any)?.logoUrl ?? '',
         descripcion: createOrdenDto.concepto,
         monto: createOrdenDto.monto,
         urlPago: `${baseUrl}/pago/${orden.token}`,
@@ -606,7 +606,7 @@ export class TesoreriaService {
 
     return this.ordenPagoModel
       .find(query)
-      .populate('servicioId', 'nombre costoBase')
+      .populate('servicioId', 'nombre costo')
       .populate('ciudadanoId', 'nombre apellidoPaterno apellidoMaterno curp')
       .populate('creadaPorId', 'nombre email')
       .sort({ createdAt: -1 })
@@ -651,7 +651,7 @@ export class TesoreriaService {
     return this.ordenPagoModel
       .find(query)
       .populate('servicioId', 'nombre costo')
-      .populate('ciudadanoId', 'nombre apellidoPaterno')
+      .populate('ciudadanoId', 'nombre apellidoPaterno apellidoMaterno curp')
       .populate('creadaPorId', 'nombre email')
       .populate('pagoId', 'folio')
       .sort({ createdAt: -1 })
@@ -785,9 +785,10 @@ export class TesoreriaService {
 
     if (emailDestino) {
       const municipio = await this.municipalityModel
-        .findById(municipioId, 'nombre')
+        .findById(municipioId, 'nombre logoUrl')
         .lean();
       const municipioNombre = (municipio as any)?.nombre ?? 'Municipio';
+      const municipioLogoUrl = (municipio as any)?.logoUrl ?? '';
 
       let nombreCiudadano =
         (orden as any)?.metadata?.nombreContribuyente || 'Ciudadano';
@@ -809,6 +810,7 @@ export class TesoreriaService {
         email: emailDestino,
         nombreCiudadano,
         municipioNombre,
+        municipioLogoUrl,
         descripcion: (orden as any)?.descripcion ?? 'Pago municipal',
         monto: (orden as any)?.monto ?? 0,
         urlPago: linkData.url,

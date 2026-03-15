@@ -405,6 +405,8 @@ export class CitasService {
 
     // ── Loop sin queries adicionales ─────────────────────────────────────────
     const resultado: DisponibilidadDia[] = [];
+    const ahoraMX = fecha.ahoraEnMexico();
+    const hoyStr = ahoraMX.format('YYYY-MM-DD');
     let current = inicioRango;
 
     while (!current.isAfter(finRango.startOf('day'))) {
@@ -429,6 +431,12 @@ export class CitasService {
         const slots = this.generarSlots(bloque.inicio, bloque.fin, duracion);
         const capacidad = bloque.capacidadPorSlot ?? 1;
         for (const horario of slots) {
+          // Filtrar slots cuya hora ya pasó cuando el día es hoy
+          if (fechaStr === hoyStr) {
+            const [hh, mm] = horario.split(':').map(Number);
+            const slotMX = current.hour(hh).minute(mm).second(0);
+            if (!slotMX.isAfter(ahoraMX)) continue;
+          }
           const citasAgendadas =
             ocupacionMap.get(`${fechaStr}|${horario}`) ?? 0;
           const lugaresRestantes = Math.max(0, capacidad - citasAgendadas);
@@ -500,6 +508,18 @@ export class CitasService {
       await this.esDiaBloqueado(municipioId, dto.area, fechaCitaDate, config)
     ) {
       throw new ConflictException('El día seleccionado no está disponible');
+    }
+
+    // 2b. Validar que el slot no haya pasado si es hoy
+    const ahoraMX = fecha.ahoraEnMexico();
+    if (fechaCitaMX.isSame(ahoraMX, 'day')) {
+      const [hh, mm] = dto.horario.split(':').map(Number);
+      const slotMX = fechaCitaMX.hour(hh).minute(mm).second(0);
+      if (!slotMX.isAfter(ahoraMX)) {
+        throw new BadRequestException(
+          'El horario seleccionado ya pasó. Elige un horario futuro.',
+        );
+      }
     }
 
     // 3. Obtener capacidad del slot
@@ -686,6 +706,9 @@ export class CitasService {
       mensaje: 'Tu cita ha sido agendada. Recibirás confirmación por correo.',
     };
   }
+
+  /** GET /public/:slug/citas/consultar */
+  async consultarCita(
     municipioId: string,
     folio: string,
     tokenOrCurp: string,
@@ -966,9 +989,7 @@ export class CitasService {
     }
 
     if (dto.estado === 'cancelada' && !dto.motivo) {
-      throw new BadRequestException(
-        'El motivo es requerido al cancelar una cita',
-      );
+      dto.motivo = 'Cancelada por funcionario';
     }
 
     cita.estado = dto.estado;
@@ -1535,114 +1556,34 @@ export class CitasService {
       .utcAMexico(cita.fechaCita)
       .format('dddd, DD [de] MMMM [de] YYYY');
     const horaStr = fecha.utcAMexico(cita.fechaCita).format('HH:mm');
-
     const linkConsultar = `${this.frontendUrl}/public/${municipioSlug}/citas/consultar?folio=${cita.folio}&token=${cita.tokenConsulta}`;
     const linkCancelar = `${this.frontendUrl}/public/${municipioSlug}/citas/consultar?folio=${cita.folio}&token=${cita.tokenConsulta}&action=cancelar`;
-
+    const municipioDoc = await this.municipioModel
+      .findById(cita.municipioId, 'logoUrl')
+      .lean();
+    const logoUrl = (municipioDoc as any)?.logoUrl ?? '';
+    const { emailCitaConfirmada } =
+      await import('../../common/helpers/email.helper');
+    const html = emailCitaConfirmada({
+      municipioNombre,
+      municipioCorreo: this.emailFrom,
+      logoUrl,
+      ciudadanoNombre: nombre,
+      folio: cita.folio,
+      area: cita.area,
+      tramite: cita.tramite,
+      fecha: fechaStr,
+      hora: horaStr,
+      instrucciones,
+      urlVerCita: linkConsultar,
+      urlCancelar: linkCancelar,
+    });
     await this.resend.emails.send({
       from: `${municipioNombre} <${this.emailFrom}>`,
       to: email,
       subject: `✅ Cita confirmada — ${cita.folio}`,
-      html: `
-<!DOCTYPE html>
-<html lang="es">
-<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
-<body style="margin:0;padding:0;background:#f0f2f5;font-family:'Segoe UI',Arial,sans-serif;">
-  <table width="100%" cellpadding="0" cellspacing="0" style="background:#f0f2f5;padding:32px 16px;">
-    <tr><td align="center">
-      <table width="600" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%;background:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 2px 12px rgba(0,0,0,0.08);">
-
-        <!-- Header -->
-        <tr>
-          <td style="background:linear-gradient(135deg,#1a237e 0%,#283593 100%);padding:32px 40px;text-align:center;">
-            <p style="margin:0 0 8px;font-size:13px;color:rgba(255,255,255,0.7);letter-spacing:1px;text-transform:uppercase;">Municipio de ${municipioNombre}</p>
-            <h1 style="margin:0;font-size:26px;color:#ffffff;font-weight:700;">Cita confirmada</h1>
-          </td>
-        </tr>
-
-        <!-- Body -->
-        <tr>
-          <td style="padding:36px 40px;">
-            <p style="margin:0 0 24px;font-size:16px;color:#333;">Hola <strong>${nombre}</strong>, tu cita ha sido agendada correctamente.</p>
-
-            <!-- Info card -->
-            <table width="100%" cellpadding="0" cellspacing="0" style="border:1px solid #e8eaf6;border-radius:8px;overflow:hidden;margin-bottom:28px;">
-              <tr style="background:#e8eaf6;">
-                <td colspan="2" style="padding:10px 16px;font-size:11px;font-weight:700;color:#3949ab;letter-spacing:0.8px;text-transform:uppercase;">Detalles de tu cita</td>
-              </tr>
-              <tr>
-                <td style="padding:12px 16px;font-size:13px;color:#666;font-weight:600;width:36%;border-bottom:1px solid #f0f0f0;">Folio</td>
-                <td style="padding:12px 16px;font-size:14px;color:#1a237e;font-weight:700;border-bottom:1px solid #f0f0f0;font-family:monospace;">${cita.folio}</td>
-              </tr>
-              <tr style="background:#fafafa;">
-                <td style="padding:12px 16px;font-size:13px;color:#666;font-weight:600;border-bottom:1px solid #f0f0f0;">Área</td>
-                <td style="padding:12px 16px;font-size:14px;color:#222;border-bottom:1px solid #f0f0f0;">${cita.area}</td>
-              </tr>
-              <tr>
-                <td style="padding:12px 16px;font-size:13px;color:#666;font-weight:600;border-bottom:1px solid #f0f0f0;">Trámite</td>
-                <td style="padding:12px 16px;font-size:14px;color:#222;border-bottom:1px solid #f0f0f0;">${cita.tramite}</td>
-              </tr>
-              <tr style="background:#fafafa;">
-                <td style="padding:12px 16px;font-size:13px;color:#666;font-weight:600;border-bottom:1px solid #f0f0f0;">Fecha</td>
-                <td style="padding:12px 16px;font-size:14px;color:#222;border-bottom:1px solid #f0f0f0;">${fechaStr}</td>
-              </tr>
-              <tr>
-                <td style="padding:12px 16px;font-size:13px;color:#666;font-weight:600;">Hora</td>
-                <td style="padding:12px 16px;font-size:14px;color:#222;font-weight:600;">${horaStr}</td>
-              </tr>
-            </table>
-
-            ${
-              instrucciones
-                ? `
-            <!-- Instrucciones -->
-            <table width="100%" cellpadding="0" cellspacing="0" style="background:#fff8e1;border-left:4px solid #ffc107;border-radius:0 6px 6px 0;margin-bottom:28px;">
-              <tr>
-                <td style="padding:14px 16px;font-size:14px;color:#5d4037;">
-                  <strong>Instrucciones:</strong> ${instrucciones}
-                </td>
-              </tr>
-            </table>`
-                : ''
-            }
-
-            <!-- Botones -->
-            <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:28px;">
-              <tr>
-                <td style="padding-right:8px;" width="50%">
-                  <a href="${linkConsultar}" style="display:block;text-align:center;padding:13px 20px;background:#1a237e;color:#ffffff;text-decoration:none;border-radius:8px;font-size:14px;font-weight:600;">
-                    Ver mi cita
-                  </a>
-                </td>
-                <td style="padding-left:8px;" width="50%">
-                  <a href="${linkCancelar}" style="display:block;text-align:center;padding:13px 20px;background:#ffffff;color:#c62828;text-decoration:none;border-radius:8px;font-size:14px;font-weight:600;border:2px solid #c62828;">
-                    Cancelar cita
-                  </a>
-                </td>
-              </tr>
-            </table>
-
-            <p style="margin:0;font-size:12px;color:#9e9e9e;text-align:center;">
-              ¿No tienes acceso al correo? Guarda tu folio <strong style="color:#555;">${cita.folio}</strong> y consulta tu cita con tu CURP desde el portal ciudadano.
-            </p>
-          </td>
-        </tr>
-
-        <!-- Footer -->
-        <tr>
-          <td style="background:#f5f5f5;padding:20px 40px;text-align:center;border-top:1px solid #eeeeee;">
-            <p style="margin:0;font-size:12px;color:#bdbdbd;">Este correo fue generado automáticamente por el sistema SAGIM · ${municipioNombre}</p>
-          </td>
-        </tr>
-
-      </table>
-    </td></tr>
-  </table>
-</body>
-</html>
-      `,
+      html,
     });
-
     this.logger.log(`Email de confirmación enviado a ${email} — ${cita.folio}`);
   }
 
@@ -1658,27 +1599,31 @@ export class CitasService {
       .utcAMexico(cita.fechaCita)
       .format('dddd, DD [de] MMMM [de] YYYY');
     const horaStr = fecha.utcAMexico(cita.fechaCita).format('HH:mm');
-
     const linkCancelar = `${this.frontendUrl}/public/${municipioSlug}/citas/consultar?folio=${cita.folio}&token=${cita.tokenConsulta}`;
-
+    const municipioDoc = await this.municipioModel
+      .findById(cita.municipioId, 'logoUrl')
+      .lean();
+    const logoUrl = (municipioDoc as any)?.logoUrl ?? '';
+    const { emailCitaRecordatorio } =
+      await import('../../common/helpers/email.helper');
+    const html = emailCitaRecordatorio({
+      municipioNombre,
+      municipioCorreo: this.emailFrom,
+      logoUrl,
+      ciudadanoNombre: nombre,
+      folio: cita.folio,
+      area: cita.area,
+      tramite: cita.tramite,
+      fecha: fechaStr,
+      hora: horaStr,
+      instrucciones,
+      urlCancelar: linkCancelar,
+    });
     await this.resend.emails.send({
       from: `${municipioNombre} <${this.emailFrom}>`,
       to: email,
       subject: `⏰ Recordatorio: tu cita es mañana — ${cita.folio}`,
-      html: `
-        <div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;">
-          <h2 style="color:#1a237e;">Recordatorio de cita</h2>
-          <p>Hola <strong>${nombre}</strong>, te recordamos que mañana tienes una cita.</p>
-          <table style="width:100%;border-collapse:collapse;margin:16px 0;">
-            <tr><td style="padding:8px;background:#f5f5f5;font-weight:bold;">Área</td><td style="padding:8px;">${cita.area}</td></tr>
-            <tr><td style="padding:8px;background:#f5f5f5;font-weight:bold;">Trámite</td><td style="padding:8px;">${cita.tramite}</td></tr>
-            <tr><td style="padding:8px;background:#f5f5f5;font-weight:bold;">Fecha</td><td style="padding:8px;">${fechaStr}</td></tr>
-            <tr><td style="padding:8px;background:#f5f5f5;font-weight:bold;">Hora</td><td style="padding:8px;">${horaStr}</td></tr>
-          </table>
-          ${instrucciones ? `<p><strong>Instrucciones:</strong> ${instrucciones}</p>` : ''}
-          <p><a href="${linkCancelar}" style="color:#d32f2f;">¿No puedes asistir? Cancela tu cita aquí</a></p>
-        </div>
-      `,
+      html,
     });
   }
 
@@ -1692,23 +1637,28 @@ export class CitasService {
       .utcAMexico(cita.fechaCita)
       .format('dddd, DD [de] MMMM [de] YYYY');
     const horaStr = fecha.utcAMexico(cita.fechaCita).format('HH:mm');
-
+    const municipioDoc = await this.municipioModel
+      .findById(cita.municipioId, 'logoUrl')
+      .lean();
+    const logoUrl = (municipioDoc as any)?.logoUrl ?? '';
+    const { emailCitaReagendada } =
+      await import('../../common/helpers/email.helper');
+    const html = emailCitaReagendada({
+      municipioNombre,
+      municipioCorreo: this.emailFrom,
+      logoUrl,
+      ciudadanoNombre: nombre,
+      folio: cita.folio,
+      area: cita.area,
+      tramite: cita.tramite,
+      fecha: fechaStr,
+      hora: horaStr,
+    });
     await this.resend.emails.send({
       from: `${municipioNombre} <${this.emailFrom}>`,
       to: email,
       subject: `🔄 Tu cita fue reagendada — ${cita.folio}`,
-      html: `
-        <div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;">
-          <h2 style="color:#1a237e;">Cita reagendada</h2>
-          <p>Hola <strong>${nombre}</strong>, tu cita ha sido reprogramada.</p>
-          <table style="width:100%;border-collapse:collapse;margin:16px 0;">
-            <tr><td style="padding:8px;background:#f5f5f5;font-weight:bold;">Nueva fecha</td><td style="padding:8px;">${fechaStr}</td></tr>
-            <tr><td style="padding:8px;background:#f5f5f5;font-weight:bold;">Nueva hora</td><td style="padding:8px;">${horaStr}</td></tr>
-            <tr><td style="padding:8px;background:#f5f5f5;font-weight:bold;">Área</td><td style="padding:8px;">${cita.area}</td></tr>
-            <tr><td style="padding:8px;background:#f5f5f5;font-weight:bold;">Trámite</td><td style="padding:8px;">${cita.tramite}</td></tr>
-          </table>
-        </div>
-      `,
+      html,
     });
   }
 }

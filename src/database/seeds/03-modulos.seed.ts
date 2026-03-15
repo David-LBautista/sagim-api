@@ -74,6 +74,16 @@ export async function seedModulos(app?: any) {
       { nombre: 'CITAS', descripcion: 'Módulo de Gestión de Citas' },
       { nombre: 'REGISTRO_CIVIL', descripcion: 'Módulo de Registro Civil' },
       { nombre: 'AUDITORIA', descripcion: 'Módulo de Auditoría' },
+      {
+        nombre: 'PORTAL',
+        descripcion:
+          'Configuración del portal público municipal (apariencia, footer, redes sociales)',
+      },
+      {
+        nombre: 'TRANSPARENCIA',
+        descripcion:
+          'Módulo de Transparencia — cumplimiento de las 44 obligaciones de la Ley 250 de Veracruz',
+      },
     ];
 
     let insertados = 0;

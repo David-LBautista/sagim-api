@@ -37,6 +37,11 @@ export class MunicipalityInterceptor implements NestInterceptor {
       '/override',
       'pagos/caja',
       'citas/configuracion',
+      '/citas/',
+      '/portal/',
+      '/corriente',
+      '/nota',
+      '/estado',
     ];
     if (skipPaths.some((p) => path.includes(p))) {
       return next.handle();

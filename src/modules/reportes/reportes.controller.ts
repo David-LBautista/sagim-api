@@ -1,9 +1,10 @@
 import {
   Controller,
   Get,
+  Patch,
+  Put,
   Post,
   Body,
-  Patch,
   Param,
   Query,
   UseGuards,
@@ -11,12 +12,6 @@ import {
   UploadedFiles,
 } from '@nestjs/common';
 import { FilesInterceptor } from '@nestjs/platform-express';
-import { ReportesService } from './reportes.service';
-import { CreateReporteDto, UpdateReporteDto } from './dto';
-import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
-import { RolesGuard } from '@/common/guards';
-import { Roles, MunicipalityId, TenantScope } from '@/common/decorators';
-import { UserRole, ReportType, ReportStatus } from '@/shared/enums';
 import {
   ApiTags,
   ApiBearerAuth,
@@ -26,6 +21,21 @@ import {
   ApiBody,
 } from '@nestjs/swagger';
 
+import { ReportesService } from './reportes.service';
+import {
+  CrearReporteInternoDto,
+  ActualizarEstadoReporteDto,
+  AsignarReporteDto,
+  CambiarPrioridadDto,
+  CambiarVisibilidadDto,
+  FiltrosReportesDto,
+  MetricasQueryDto,
+} from './dto/reportes.dto';
+import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { RolesGuard } from '@/common/guards';
+import { Roles, MunicipalityId, CurrentUser } from '@/common/decorators';
+import { UserRole } from '@/shared/enums';
+
 @ApiTags('Reportes')
 @ApiBearerAuth()
 @Controller('reportes')
@@ -33,79 +43,198 @@ import {
 export class ReportesController {
   constructor(private readonly reportesService: ReportesService) {}
 
-  @Post()
-  @Roles(UserRole.SUPER_ADMIN, UserRole.ADMIN_MUNICIPIO, UserRole.OPERATIVO)
-  @ApiOperation({ summary: 'Crear un nuevo reporte ciudadano con imágenes' })
-  @ApiConsumes('multipart/form-data')
-  @UseInterceptors(FilesInterceptor('evidencia', 10))
-  @ApiBody({
-    schema: {
-      type: 'object',
-      properties: {
-        ciudadanoId: { type: 'string', example: '697bf7fd36f2d5ed398d1ecd' },
-        tipo: {
-          type: 'string',
-          enum: ['BASURA', 'ALUMBRADO', 'BACHE', 'AGUA', 'DRENAJE', 'OTRO'],
-          example: 'BACHE',
-        },
-        descripcion: {
-          type: 'string',
-          example: 'Bache grande en la calle principal',
-        },
-        ubicacion: { type: 'string', example: '{"lat":18.876,"lng":-97.123}' },
-        colonia: { type: 'string', example: 'Centro' },
-        calle: { type: 'string', example: 'Av. Hidalgo #123' },
-        evidencia: {
-          type: 'array',
-          items: { type: 'string', format: 'binary' },
-        },
-      },
-    },
-  })
-  async create(
-    @Body() createReporteDto: CreateReporteDto,
-    @UploadedFiles() files: Express.Multer.File[],
-    @MunicipalityId() municipioId: string,
-  ) {
-    return this.reportesService.create(createReporteDto, municipioId, files);
-  }
+  // ── Literal GET routes MUST come before @Get(':id') ──────────
 
   @Get()
   @Roles(UserRole.SUPER_ADMIN, UserRole.ADMIN_MUNICIPIO, UserRole.OPERATIVO)
-  @ApiOperation({ summary: 'Listar todos los reportes con filtros' })
-  @ApiQuery({ name: 'tipo', required: false, enum: ReportType })
-  @ApiQuery({ name: 'estado', required: false, enum: ReportStatus })
-  @ApiQuery({ name: 'colonia', required: false })
+  @ApiOperation({ summary: 'Listar reportes del municipio con filtros' })
+  @ApiQuery({ name: 'categoria', required: false })
+  @ApiQuery({ name: 'estado', required: false })
+  @ApiQuery({ name: 'modulo', required: false })
+  @ApiQuery({ name: 'prioridad', required: false })
+  @ApiQuery({ name: 'origen', required: false })
+  @ApiQuery({ name: 'asignadoA', required: false })
+  @ApiQuery({ name: 'fechaInicio', required: false })
+  @ApiQuery({ name: 'fechaFin', required: false })
+  @ApiQuery({ name: 'buscar', required: false })
+  @ApiQuery({ name: 'page', required: false, type: Number })
+  @ApiQuery({ name: 'limit', required: false, type: Number })
   findAll(
-    @TenantScope() scope: any,
-    @Query('tipo') tipo?: string,
-    @Query('estado') estado?: string,
-    @Query('colonia') colonia?: string,
+    @MunicipalityId() municipioId: string,
+    @Query() filters: FiltrosReportesDto,
   ) {
-    return this.reportesService.findAll(scope, { tipo, estado, colonia });
+    return this.reportesService.findAll(municipioId, filters);
   }
+
+  @Get('mis-reportes')
+  @Roles(UserRole.SUPER_ADMIN, UserRole.ADMIN_MUNICIPIO, UserRole.OPERATIVO)
+  @ApiOperation({ summary: 'Reportes asignados al usuario autenticado' })
+  @ApiQuery({
+    name: 'estado',
+    required: false,
+    description: 'Separados por coma. Default: pendiente,en_proceso',
+  })
+  misReportes(
+    @MunicipalityId() municipioId: string,
+    @CurrentUser() user: any,
+    @Query('estado') estado?: string,
+  ) {
+    return this.reportesService.misReportes(
+      municipioId,
+      user?._id?.toString(),
+      estado,
+    );
+  }
+
+  @Get('metricas')
+  @Roles(UserRole.SUPER_ADMIN, UserRole.ADMIN_MUNICIPIO, UserRole.OPERATIVO)
+  @ApiOperation({
+    summary: 'Métricas internas para el dashboard de Presidencia',
+  })
+  @ApiQuery({ name: 'mes', required: false, type: Number })
+  @ApiQuery({ name: 'anio', required: false, type: Number })
+  @ApiQuery({ name: 'modulo', required: false })
+  getMetricas(
+    @MunicipalityId() municipioId: string,
+    @Query() query: MetricasQueryDto,
+  ) {
+    return this.reportesService.getMetricasInternas(municipioId, query);
+  }
+
+  @Get('configuracion')
+  @Roles(UserRole.SUPER_ADMIN, UserRole.ADMIN_MUNICIPIO)
+  @ApiOperation({ summary: 'Configuración actual del módulo de reportes' })
+  getConfiguracion(@MunicipalityId() municipioId: string) {
+    return this.reportesService.getConfiguracion(municipioId);
+  }
+
+  @Get('configuracion/catalogo')
+  @Roles(UserRole.SUPER_ADMIN, UserRole.ADMIN_MUNICIPIO)
+  @ApiOperation({
+    summary: 'Catálogo completo de categorías disponibles (para configuración)',
+  })
+  getCatalogo() {
+    return this.reportesService.getCatalogoCompleto();
+  }
+
+  // ── Parameterized route LAST ───────────────────────────────
 
   @Get(':id')
   @Roles(UserRole.SUPER_ADMIN, UserRole.ADMIN_MUNICIPIO, UserRole.OPERATIVO)
-  @ApiOperation({ summary: 'Obtener un reporte por ID' })
-  findOne(@Param('id') id: string, @TenantScope() scope: any) {
-    return this.reportesService.findOne(id, scope);
+  @ApiOperation({ summary: 'Detalle completo de un reporte' })
+  findOne(@Param('id') id: string, @MunicipalityId() municipioId: string) {
+    return this.reportesService.findOne(id, municipioId);
   }
 
-  @Patch(':id')
+  @Patch(':id/estado')
   @Roles(UserRole.SUPER_ADMIN, UserRole.ADMIN_MUNICIPIO, UserRole.OPERATIVO)
-  @ApiOperation({ summary: 'Actualizar estado de un reporte' })
-  update(
+  @ApiOperation({
+    summary: 'Cambiar estado del reporte (con validación de transición)',
+  })
+  actualizarEstado(
     @Param('id') id: string,
-    @Body() updateReporteDto: UpdateReporteDto,
+    @Body() dto: ActualizarEstadoReporteDto,
+    @MunicipalityId() municipioId: string,
+    @CurrentUser() user: any,
+  ) {
+    return this.reportesService.actualizarEstado(
+      id,
+      dto,
+      municipioId,
+      user?._id?.toString(),
+      user?.nombre ?? user?.email,
+    );
+  }
+
+  @Patch(':id/asignar')
+  @Roles(UserRole.SUPER_ADMIN, UserRole.ADMIN_MUNICIPIO, UserRole.OPERATIVO)
+  @ApiOperation({ summary: 'Asignar reporte a un funcionario' })
+  asignar(
+    @Param('id') id: string,
+    @Body() dto: AsignarReporteDto,
+    @MunicipalityId() municipioId: string,
+    @CurrentUser() user: any,
+  ) {
+    return this.reportesService.asignarReporte(
+      id,
+      dto,
+      municipioId,
+      user?._id?.toString(),
+      user?.nombre ?? user?.email ?? 'Funcionario',
+    );
+  }
+
+  @Patch(':id/prioridad')
+  @Roles(UserRole.SUPER_ADMIN, UserRole.ADMIN_MUNICIPIO)
+  @ApiOperation({ summary: 'Cambiar prioridad del reporte' })
+  cambiarPrioridad(
+    @Param('id') id: string,
+    @Body() dto: CambiarPrioridadDto,
     @MunicipalityId() municipioId: string,
   ) {
-    return this.reportesService.update(id, updateReporteDto, municipioId);
+    return this.reportesService.cambiarPrioridad(id, dto, municipioId);
   }
 
-  @Post('upload')
+  @Patch(':id/visibilidad')
+  @Roles(UserRole.SUPER_ADMIN, UserRole.ADMIN_MUNICIPIO)
+  @ApiOperation({
+    summary: 'Mostrar u ocultar reporte en portal de transparencia',
+  })
+  cambiarVisibilidad(
+    @Param('id') id: string,
+    @Body() dto: CambiarVisibilidadDto,
+    @MunicipalityId() municipioId: string,
+  ) {
+    return this.reportesService.cambiarVisibilidad(
+      id,
+      dto.visible,
+      municipioId,
+    );
+  }
+
+  // ──────────────────────────────────────────────────────────
+  // CREACIÓN INTERNA
+  // ──────────────────────────────────────────────────────────
+
+  @Post()
   @Roles(UserRole.SUPER_ADMIN, UserRole.ADMIN_MUNICIPIO, UserRole.OPERATIVO)
-  @ApiOperation({ summary: 'Subir imágenes a Cloudinary' })
+  @ApiOperation({
+    summary: 'Registrar reporte internamente (recepcionista / funcionario)',
+  })
+  crearInterno(
+    @Body() dto: CrearReporteInternoDto,
+    @MunicipalityId() municipioId: string,
+    @CurrentUser() user: any,
+  ) {
+    return this.reportesService.crearReporteInterno(
+      municipioId,
+      dto,
+      user?._id?.toString(),
+      user?.nombre ?? user?.email ?? 'Funcionario',
+    );
+  }
+
+  // ──────────────────────────────────────────────────────────
+  // CONFIGURACIÓN
+  // ──────────────────────────────────────────────────────────
+
+  @Patch('configuracion')
+  @Roles(UserRole.SUPER_ADMIN, UserRole.ADMIN_MUNICIPIO)
+  @ApiOperation({ summary: 'Actualizar configuración del módulo de reportes' })
+  upsertConfiguracion(
+    @MunicipalityId() municipioId: string,
+    @Body() body: Record<string, any>,
+  ) {
+    return this.reportesService.upsertConfiguracion(municipioId, body);
+  }
+
+  // ──────────────────────────────────────────────────────────
+  // IMÁGENES
+  // ──────────────────────────────────────────────────────────
+
+  @Post('upload-images')
+  @Roles(UserRole.SUPER_ADMIN, UserRole.ADMIN_MUNICIPIO, UserRole.OPERATIVO)
+  @ApiOperation({ summary: 'Subir imágenes de evidencia a Cloudinary' })
   @ApiConsumes('multipart/form-data')
   @ApiBody({
     schema: {
@@ -113,16 +242,17 @@ export class ReportesController {
       properties: {
         files: {
           type: 'array',
-          items: {
-            type: 'string',
-            format: 'binary',
-          },
+          items: { type: 'string', format: 'binary' },
         },
       },
     },
   })
   @UseInterceptors(FilesInterceptor('files', 10))
-  async uploadImages(@UploadedFiles() files: Express.Multer.File[]) {
-    return this.reportesService.uploadImages(files);
+  uploadImages(
+    @UploadedFiles() files: Express.Multer.File[],
+    @Query('slug') slug: string,
+    @Query('folio') folio?: string,
+  ) {
+    return this.reportesService.uploadImages(files, slug, folio);
   }
 }

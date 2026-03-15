@@ -130,6 +130,17 @@ export class PagosController {
   }
 
   @Public()
+  @Public()
+  @Get('pagos/orden/folio/:folio')
+  @ApiOperation({
+    summary:
+      '🌐 PÚBLICO - Ciudadano busca su orden por folio (ej. ORD-202603-0001)',
+  })
+  getOrdenPorFolio(@Param('folio') folio: string) {
+    return this.pagosService.getOrdenPorFolio(folio);
+  }
+
+  @Public()
   @Get('pagos/orden/:token')
   @ApiOperation({
     summary: '🌐 PÚBLICO - Ciudadano consulta orden de pago por token',

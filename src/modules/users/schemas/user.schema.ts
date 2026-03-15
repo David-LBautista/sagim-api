@@ -9,11 +9,6 @@ export type UserDocument = User & Document;
   timestamps: true,
   toJSON: {
     transform: (_doc, ret: any) => {
-      ret.telefono = ret.telefono ?? null;
-      ret.moduloId = ret.moduloId ?? null;
-      ret.municipioId = ret.municipioId ?? null;
-      ret.avatar = ret.avatar ?? null;
-      ret.ultimoAcceso = ret.ultimoAcceso ?? null;
       delete ret.password;
       delete ret.refreshToken;
       return ret;

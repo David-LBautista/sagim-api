@@ -1,0 +1,430 @@
+<!doctype html>
+<html lang="es" xmlns="http://www.w3.org/1999/xhtml">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <title>{{ASUNTO}}</title>
+    <!--[if mso]>
+      <noscript>
+        <xml>
+          <o:OfficeDocumentSettings>
+            <o:PixelsPerInch>96</o:PixelsPerInch>
+          </o:OfficeDocumentSettings>
+        </xml>
+      </noscript>
+    <![endif]-->
+    <style>
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+      body,
+      table,
+      td,
+      a {
+        -webkit-text-size-adjust: 100%;
+        -ms-text-size-adjust: 100%;
+      }
+      table,
+      td {
+        mso-table-lspace: 0pt;
+        mso-table-rspace: 0pt;
+      }
+      img {
+        -ms-interpolation-mode: bicubic;
+        border: 0;
+        display: block;
+      }
+
+      body {
+        background-color: #f0f2f5;
+        font-family: 'Segoe UI', Helvetica, Arial, sans-serif;
+        margin: 0;
+        padding: 0;
+        width: 100% !important;
+      }
+      .email-wrapper {
+        background-color: #f0f2f5;
+        padding: 32px 16px;
+        width: 100%;
+      }
+      .email-container {
+        background-color: #ffffff;
+        border-radius: 12px;
+        max-width: 600px;
+        margin: 0 auto;
+        overflow: hidden;
+        box-shadow: 0 4px 24px rgba(15, 42, 68, 0.1);
+      }
+      .email-header {
+        background: linear-gradient(135deg, #0f2a44 0%, #1f6fae 100%);
+        padding: 36px 40px;
+        text-align: center;
+      }
+      .email-header__logo {
+        width: 72px;
+        height: 72px;
+        border-radius: 50%;
+        background-color: rgba(255, 255, 255, 0.15);
+        border: 3px solid rgba(255, 255, 255, 0.4);
+        object-fit: cover;
+        display: inline-block;
+        margin: 0 auto 12px auto;
+      }
+      .email-header__municipio {
+        color: #ffffff;
+        font-size: 20px;
+        font-weight: 700;
+        letter-spacing: 1.5px;
+        text-transform: uppercase;
+        line-height: 1.2;
+        margin-bottom: 4px;
+      }
+      .email-header__sistema {
+        color: rgba(255, 255, 255, 0.65);
+        font-size: 13px;
+        letter-spacing: 0.5px;
+        margin-bottom: 20px;
+      }
+      .email-header__divider {
+        width: 48px;
+        height: 3px;
+        background: linear-gradient(90deg, #f0a12a, #f5c06a);
+        border-radius: 2px;
+        margin: 0 auto 18px auto;
+      }
+      .email-header__title {
+        color: #ffffff;
+        font-size: 28px;
+        font-weight: 700;
+        line-height: 1.2;
+        letter-spacing: -0.3px;
+        margin: 0;
+      }
+      .email-header__subtitle {
+        color: rgba(255, 255, 255, 0.65);
+        font-size: 15px;
+        margin-top: 8px;
+      }
+      .email-body {
+        padding: 36px 40px;
+      }
+      .email-greeting {
+        font-size: 16px;
+        color: #3a3a3a;
+        margin-bottom: 8px;
+        line-height: 1.5;
+      }
+      .email-greeting strong {
+        color: #0f2a44;
+        font-weight: 700;
+      }
+      .email-intro {
+        font-size: 15px;
+        color: #5a5a5a;
+        line-height: 1.7;
+        margin-bottom: 28px;
+      }
+      .data-card {
+        background-color: #f7f9fc;
+        border: 1px solid #e8edf3;
+        border-radius: 10px;
+        overflow: hidden;
+        margin-bottom: 24px;
+      }
+      .data-card__header {
+        background-color: #e8edf3;
+        padding: 10px 20px;
+        font-size: 10px;
+        font-weight: 700;
+        letter-spacing: 1.5px;
+        text-transform: uppercase;
+        color: #1f6fae;
+      }
+      .data-row {
+        display: flex;
+        padding: 14px 20px;
+        border-bottom: 1px solid #eaeff5;
+        align-items: flex-start;
+        gap: 16px;
+      }
+      .data-row:last-child {
+        border-bottom: none;
+      }
+      .data-label {
+        font-size: 11px;
+        font-weight: 600;
+        letter-spacing: 0.8px;
+        text-transform: uppercase;
+        color: #7a7a7a;
+        min-width: 110px;
+        padding-top: 2px;
+      }
+      .data-value {
+        font-size: 14px;
+        color: #1a1a1a;
+        font-weight: 500;
+        line-height: 1.5;
+        flex: 1;
+      }
+      .data-value--folio {
+        font-size: 16px;
+        font-weight: 700;
+        color: #0f2a44;
+        letter-spacing: 0.5px;
+      }
+      .data-value--monto {
+        font-size: 22px;
+        font-weight: 700;
+        color: #6fae3b;
+      }
+      .data-value--monto span {
+        font-size: 13px;
+        font-weight: 500;
+        color: #7a7a7a;
+        margin-left: 4px;
+      }
+      .data-value--alerta {
+        color: #d64545;
+        font-weight: 600;
+      }
+      .alert-box {
+        border-left: 4px solid #f0a12a;
+        background-color: #fffbf2;
+        border-radius: 0 8px 8px 0;
+        padding: 14px 18px;
+        margin-bottom: 24px;
+      }
+      .alert-box--success {
+        border-left-color: #6fae3b;
+        background-color: #f4fbee;
+      }
+      .alert-box--info {
+        border-left-color: #1f6fae;
+        background-color: #f0f7ff;
+      }
+      .alert-box--danger {
+        border-left-color: #d64545;
+        background-color: #fff5f5;
+      }
+      .alert-box__label {
+        font-size: 11px;
+        font-weight: 700;
+        letter-spacing: 1px;
+        text-transform: uppercase;
+        color: #7a7a7a;
+        margin-bottom: 4px;
+      }
+      .alert-box__text {
+        font-size: 14px;
+        color: #3a3a3a;
+        line-height: 1.6;
+      }
+      .alert-box__text strong {
+        color: #0f2a44;
+      }
+      .btn-container {
+        text-align: center;
+        margin: 28px 0 8px;
+      }
+      .btn {
+        display: inline-block;
+        padding: 14px 32px;
+        border-radius: 8px;
+        font-size: 15px;
+        font-weight: 700;
+        text-decoration: none;
+        letter-spacing: 0.3px;
+        cursor: pointer;
+      }
+      .btn--primary {
+        background: linear-gradient(135deg, #0f2a44 0%, #1f6fae 100%);
+        color: #ffffff !important;
+      }
+      .btn--success {
+        background: linear-gradient(135deg, #5c9d2d 0%, #6fae3b 100%);
+        color: #ffffff !important;
+      }
+      .btn--danger {
+        background-color: transparent;
+        color: #d64545 !important;
+        border: 2px solid #d64545;
+      }
+      .btn--secondary {
+        background-color: transparent;
+        color: #1f6fae !important;
+        border: 2px solid #1f6fae;
+      }
+      .btn-group {
+        display: flex;
+        gap: 12px;
+        justify-content: center;
+        flex-wrap: wrap;
+        margin: 28px 0 8px;
+      }
+      .badge {
+        display: inline-block;
+        padding: 4px 12px;
+        border-radius: 20px;
+        font-size: 12px;
+        font-weight: 600;
+        letter-spacing: 0.3px;
+      }
+      .badge--pendiente {
+        background: #fff3e0;
+        color: #f0a12a;
+      }
+      .badge--en-proceso {
+        background: #e3f2fd;
+        color: #1f6fae;
+      }
+      .badge--resuelto {
+        background: #f1f8e9;
+        color: #6fae3b;
+      }
+      .badge--cancelado {
+        background: #ffebee;
+        color: #d64545;
+      }
+      .email-footer {
+        background-color: #f7f9fc;
+        border-top: 1px solid #e8edf3;
+        padding: 24px 40px;
+        text-align: center;
+      }
+      .email-footer__powered {
+        font-size: 11px;
+        color: #9a9a9a;
+        margin-bottom: 4px;
+      }
+      .email-footer__powered strong {
+        color: #0f2a44;
+        font-weight: 700;
+      }
+      .email-footer__disclaimer {
+        font-size: 11px;
+        color: #b0b0b0;
+        line-height: 1.5;
+        margin-top: 8px;
+      }
+
+      @media only screen and (max-width: 600px) {
+        .email-header {
+          padding: 24px 24px;
+        }
+        .email-body {
+          padding: 24px 24px;
+        }
+        .email-footer {
+          padding: 20px 24px;
+        }
+        .email-header__title {
+          font-size: 24px;
+        }
+        .email-header__municipio {
+          font-size: 17px;
+        }
+        .data-row {
+          flex-direction: column;
+          gap: 4px;
+        }
+        .data-label {
+          min-width: unset;
+        }
+        .btn-group {
+          flex-direction: column;
+          align-items: center;
+        }
+        .btn {
+          width: 100%;
+          text-align: center;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="email-wrapper">
+      <div class="email-container">
+        <!-- HEADER -->
+        <div class="email-header">
+          <img
+            class="email-header__logo"
+            src="{{LOGO_URL}}"
+            alt="Escudo {{MUNICIPIO_NOMBRE}}"
+            width="72"
+            height="72"
+          />
+          <div class="email-header__municipio">{{MUNICIPIO_NOMBRE}}</div>
+          <div class="email-header__sistema">Portal Ciudadano · SAGIM</div>
+          <div class="email-header__divider"></div>
+          <h1 class="email-header__title">{{HEADER_TITULO}}</h1>
+          <p class="email-header__subtitle">{{HEADER_SUBTITULO}}</p>
+        </div>
+
+        <!-- BODY -->
+        <div class="email-body">
+          <p class="email-greeting">
+            Hola <strong>{{CIUDADANO_NOMBRE}}</strong>,
+          </p>
+          <p class="email-intro">{{MENSAJE_INTRO}}</p>
+
+          <!-- Card de datos -->
+          <div class="data-card">
+            <div class="data-card__header">Detalles</div>
+
+            <div class="data-row">
+              <span class="data-label">Folio</span>
+              <span class="data-value data-value--folio">{{FOLIO}}</span>
+            </div>
+
+            <div class="data-row">
+              <span class="data-label">{{CAMPO_1_LABEL}}</span>
+              <span class="data-value">{{CAMPO_1_VALOR}}</span>
+            </div>
+
+            <div class="data-row">
+              <span class="data-label">{{CAMPO_2_LABEL}}</span>
+              <span class="data-value">{{CAMPO_2_VALOR}}</span>
+            </div>
+
+            <div class="data-row">
+              <span class="data-label">{{CAMPO_3_LABEL}}</span>
+              <span class="data-value">{{CAMPO_3_VALOR}}</span>
+            </div>
+
+            <div class="data-row">
+              <span class="data-label">{{CAMPO_4_LABEL}}</span>
+              <span class="data-value">{{CAMPO_4_VALOR}}</span>
+            </div>
+
+            <div class="data-row">
+              <span class="data-label">{{CAMPO_5_LABEL}}</span>
+              <span class="data-value">{{CAMPO_5_VALOR}}</span>
+            </div>
+          </div>
+
+          <!-- Alert box -->
+          {{ALERT_HTML}}
+
+          <!-- Botones -->
+          {{BTNS_HTML}}
+        </div>
+
+        <!-- FOOTER -->
+        <div class="email-footer">
+          <p class="email-footer__powered">
+            Powered by <strong>SAGIM</strong> &nbsp;·&nbsp; Sistema de
+            Administración y Gestión Integral Municipal
+          </p>
+          <p class="email-footer__disclaimer">
+            Este correo fue enviado automáticamente por el sistema SAGIM del
+            {{MUNICIPIO_NOMBRE}}.<br />
+            Si tienes dudas, comunícate con nosotros en {{MUNICIPIO_CORREO}}.
+          </p>
+        </div>
+      </div>
+    </div>
+  </body>
+</html>

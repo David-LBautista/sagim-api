@@ -311,29 +311,7 @@ export class PagosService {
       }
     }
 
-    const ordenPago = new this.ordenPagoModel({
-      token,
-      municipioId: new Types.ObjectId(municipioId),
-      servicioId: createOrdenPagoDto.servicioId
-        ? new Types.ObjectId(createOrdenPagoDto.servicioId)
-        : undefined,
-      ciudadanoId: createOrdenPagoDto.ciudadanoId
-        ? new Types.ObjectId(createOrdenPagoDto.ciudadanoId)
-        : undefined,
-      monto: createOrdenPagoDto.monto,
-      descripcion: createOrdenPagoDto.descripcion,
-      areaResponsable,
-      creadaPorId: new Types.ObjectId(userId),
-      expiresAt,
-      estado: OrdenPagoStatus.PENDIENTE,
-      nombreContribuyente: createOrdenPagoDto.nombreContribuyente,
-      folioDocumento: createOrdenPagoDto.folioDocumento,
-      metadata: { emailCiudadano: createOrdenPagoDto.emailCiudadano },
-    });
-
-    const orden = await ordenPago.save();
-
-    // Resolver email y nombre para notificación
+    // Resolver email y nombre ANTES de guardar para persistirlo en metadata
     let emailDestino = createOrdenPagoDto.emailCiudadano;
     let nombreCiudadano = 'Ciudadano';
 
@@ -357,15 +335,38 @@ export class PagosService {
       }
     }
 
+    const ordenPago = new this.ordenPagoModel({
+      token,
+      municipioId: new Types.ObjectId(municipioId),
+      servicioId: createOrdenPagoDto.servicioId
+        ? new Types.ObjectId(createOrdenPagoDto.servicioId)
+        : undefined,
+      ciudadanoId: createOrdenPagoDto.ciudadanoId
+        ? new Types.ObjectId(createOrdenPagoDto.ciudadanoId)
+        : undefined,
+      monto: createOrdenPagoDto.monto,
+      descripcion: createOrdenPagoDto.descripcion,
+      areaResponsable,
+      creadaPorId: new Types.ObjectId(userId),
+      expiresAt,
+      estado: OrdenPagoStatus.PENDIENTE,
+      nombreContribuyente: createOrdenPagoDto.nombreContribuyente,
+      folioDocumento: createOrdenPagoDto.folioDocumento,
+      metadata: { emailCiudadano: emailDestino },
+    });
+
+    const orden = await ordenPago.save();
+
     if (emailDestino) {
       const baseUrl = process.env.FRONTEND_URL || 'https://pagos.sagim.mx';
       const municipio = await this.municipalityModel
-        .findById(municipioId, 'nombre')
+        .findById(municipioId, 'nombre logoUrl')
         .lean();
       void this.notificacionesService.enviarLinkPago({
         email: emailDestino,
         nombreCiudadano,
         municipioNombre: (municipio as any)?.nombre ?? 'Municipio',
+        municipioLogoUrl: (municipio as any)?.logoUrl ?? '',
         descripcion: createOrdenPagoDto.descripcion,
         monto: createOrdenPagoDto.monto,
         urlPago: `${baseUrl}/pago/${orden.token}`,
@@ -379,6 +380,56 @@ export class PagosService {
   /**
    * 2️⃣ Ciudadano consulta orden (endpoint público)
    */
+  /**
+   * Búsqueda pública por folio — el ciudadano escribe el folio de su orden
+   * y recibe el token para continuar con el pago.
+   * Solo aplica a órdenes INTERNAS (las únicas que tienen folio).
+   */
+  async getOrdenPorFolio(folio: string): Promise<any> {
+    const orden = await this.ordenPagoModel
+      .findOne({ folio: folio.toUpperCase().trim() })
+      .populate('servicioId', 'nombre descripcion areaResponsable')
+      .populate('municipioId', 'nombre logoUrl')
+      .exec();
+
+    if (!orden) {
+      throw new NotFoundException('No se encontró ninguna orden con ese folio');
+    }
+
+    // Validar vigencia
+    const ahora = new Date();
+    if (orden.estado === OrdenPagoStatus.EXPIRADA || ahora > orden.expiresAt) {
+      await this.ordenPagoModel.updateOne(
+        { _id: orden._id },
+        { estado: OrdenPagoStatus.EXPIRADA },
+      );
+      throw new BadRequestException('Esta orden de pago ha expirado');
+    }
+    if (orden.estado === OrdenPagoStatus.PAGADA) {
+      throw new BadRequestException('Esta orden ya fue pagada');
+    }
+    if (orden.estado === OrdenPagoStatus.CANCELADA) {
+      throw new BadRequestException('Esta orden fue cancelada');
+    }
+
+    // Devuelve el token para que el frontend continúe con el flujo de pago estándar
+    const municipio = orden.municipioId as any;
+    return {
+      token: orden.token,
+      folio: orden.folio,
+      concepto: orden.concepto,
+      descripcion: orden.descripcion,
+      monto: orden.monto,
+      areaResponsable: orden.areaResponsable,
+      expiresAt: orden.expiresAt,
+      servicio: orden.servicioId,
+      municipio: {
+        nombre: municipio?.nombre ?? null,
+        logoUrl: municipio?.logoUrl ?? null,
+      },
+    };
+  }
+
   async getOrdenPorToken(token: string): Promise<any> {
     const orden = await this.ordenPagoModel
       .findOne({ token })
@@ -550,7 +601,7 @@ export class PagosService {
 
     // Desglose fiscal de contribución configurada por el municipio
     const municipioDoc = await this.municipalityModel
-      .findById(orden.municipioId, 'nombre porcentajeContribucion')
+      .findById(orden.municipioId, 'nombre logoUrl porcentajeContribucion')
       .lean();
     const pct = (municipioDoc as any)?.porcentajeContribucion ?? 10;
     const subtotal = Number((montoCobrado / (1 + pct / 100)).toFixed(2));
@@ -670,6 +721,7 @@ export class PagosService {
             email: emailConfirmacion,
             nombreCiudadano: (orden as any).nombreContribuyente ?? 'Ciudadano',
             municipioNombre: (municipioDoc as any)?.nombre ?? 'Municipio',
+            municipioLogoUrl: (municipioDoc as any)?.logoUrl ?? '',
             descripcion: orden.descripcion,
             folio: pagoGuardado.folio,
             monto: pagoGuardado.monto,

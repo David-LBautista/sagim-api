@@ -15,12 +15,14 @@ import {
 } from './schemas/municipality.schema';
 import { Programa, ProgramaDocument } from '../dif/schemas/programa.schema';
 import { User, UserDocument } from '../users/schemas/user.schema';
+import { Modulo, ModuloDocument } from '../modulos/schemas/modulo.schema';
 import {
   CreateMunicipalityDto,
   UpdateMunicipalityConfigDto,
   UpdateMunicipalityDto,
 } from './dto';
 import { CloudinaryService } from '../cloudinary/cloudinary.service';
+import { TransparenciaService } from '../transparencia/transparencia.service';
 import * as bcrypt from 'bcrypt';
 import { UserRole } from '@/shared/enums';
 
@@ -33,7 +35,10 @@ export class MunicipalitiesService {
     private programaModel: Model<ProgramaDocument>,
     @InjectModel(User.name)
     private userModel: Model<UserDocument>,
+    @InjectModel(Modulo.name)
+    private moduloModel: Model<ModuloDocument>,
     private readonly cloudinaryService: CloudinaryService,
+    private readonly transparenciaService: TransparenciaService,
     @Inject(WINSTON_MODULE_NEST_PROVIDER)
     private readonly logger: LoggerService,
   ) {}
@@ -69,9 +74,10 @@ export class MunicipalitiesService {
     // Subir logo a Cloudinary si se proporciona
     let logoUrl: string | undefined;
     if (logo) {
+      const slugged = this.toSlug(createMunicipalityDto.nombre);
       const uploadResult = await this.cloudinaryService.uploadImage(
         logo,
-        'municipios/logos',
+        `sagim/municipios/${slugged}/logo`,
       );
       logoUrl = uploadResult.secure_url;
     }
@@ -130,6 +136,9 @@ export class MunicipalitiesService {
 
     await this.programaModel.insertMany(programasBase);
 
+    // Inicializar secciones de transparencia (44 obligaciones Ley 250 Veracruz)
+    await this.transparenciaService.seedSecciones(municipality._id);
+
     // Crear usuario ADMIN_MUNICIPIO para el municipio
     const hashedPassword = await bcrypt.hash(
       createMunicipalityDto.adminPassword,
@@ -181,12 +190,20 @@ export class MunicipalitiesService {
   }
 
   async findAll(): Promise<any[]> {
-    const municipalities = await this.municipalityModel
-      .find()
-      .populate('estadoId', 'nombre clave')
-      .select('-__v')
-      .sort({ nombre: 1 })
-      .lean();
+    const [municipalities, todosLosModulos] = await Promise.all([
+      this.municipalityModel
+        .find()
+        .populate('estadoId', 'nombre clave')
+        .select('-__v')
+        .sort({ nombre: 1 })
+        .lean(),
+      this.moduloModel.find({ activo: true }).select('nombre').lean(),
+    ]);
+
+    // Map de todos los módulos disponibles en el catálogo
+    const modulosDisponibles = todosLosModulos.map(
+      (m: any) => m.nombre as string,
+    );
 
     // Obtener admins de todos los municipios en una sola query
     const municipioIds = municipalities.map((m: any) => m._id);
@@ -201,18 +218,35 @@ export class MunicipalitiesService {
       admins.map((a: any) => [a.municipioId.toString(), a]),
     );
 
-    return municipalities.map((m: any) => ({
-      ...m,
-      admin: adminMap.get(m._id.toString()) ?? null,
-    }));
+    return municipalities.map((m: any) => {
+      // Construir config.modulos con TODOS los módulos del catálogo;
+      // los que ya están configurados conservan su valor, el resto queda en false
+      const modulosStored = m.config?.modulos ?? {};
+      const modulosCompletos: Record<string, boolean> = {};
+      for (const nombre of modulosDisponibles) {
+        modulosCompletos[nombre] = modulosStored[nombre] === true;
+      }
+
+      return {
+        ...m,
+        config: {
+          ...(m.config ?? {}),
+          modulos: modulosCompletos,
+        },
+        admin: adminMap.get(m._id.toString()) ?? null,
+      };
+    });
   }
 
   async findOne(id: string): Promise<any> {
-    const municipality = await this.municipalityModel
-      .findById(id)
-      .populate('estadoId', 'nombre clave')
-      .select('-__v')
-      .lean();
+    const [municipality, todosLosModulos] = await Promise.all([
+      this.municipalityModel
+        .findById(id)
+        .populate('estadoId', 'nombre clave')
+        .select('-__v')
+        .lean(),
+      this.moduloModel.find({ activo: true }).select('nombre').lean(),
+    ]);
 
     if (!municipality) {
       throw new NotFoundException('Municipio no encontrado');
@@ -228,7 +262,23 @@ export class MunicipalitiesService {
       )
       .lean();
 
-    return { ...(municipality as any), admin: admin ?? null };
+    const modulosDisponibles = todosLosModulos.map(
+      (m: any) => m.nombre as string,
+    );
+    const modulosStored = (municipality as any).config?.modulos ?? {};
+    const modulosCompletos: Record<string, boolean> = {};
+    for (const nombre of modulosDisponibles) {
+      modulosCompletos[nombre] = modulosStored[nombre] === true;
+    }
+
+    return {
+      ...(municipality as any),
+      config: {
+        ...((municipality as any).config ?? {}),
+        modulos: modulosCompletos,
+      },
+      admin: admin ?? null,
+    };
   }
 
   async updateConfig(
@@ -278,9 +328,10 @@ export class MunicipalitiesService {
 
     // Subir nuevo logo si se envió
     if (logo) {
+      const slugged = this.toSlug(municipality.nombre);
       const uploadResult = await this.cloudinaryService.uploadImage(
         logo,
-        'municipios/logos',
+        `sagim/municipios/${slugged}/logo`,
       );
       municipioUpdate.logoUrl = uploadResult.secure_url;
     }
@@ -513,5 +564,14 @@ export class MunicipalitiesService {
       'MunicipalitiesService',
     );
     return { onboardingCompletado: true };
+  }
+
+  private toSlug(nombre: string): string {
+    return nombre
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/\s+/g, '-')
+      .replace(/[^a-z0-9-]/g, '');
   }
 }

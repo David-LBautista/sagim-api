@@ -9,6 +9,7 @@ import {
 } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { ConfigService } from '@nestjs/config';
+import { S3Keys } from '@/shared/helpers/s3-keys.helper';
 
 @Injectable()
 export class S3Service {
@@ -31,47 +32,40 @@ export class S3Service {
   }
 
   // ── Helpers estáticos de keys S3 ───────────────────────────────────────────
+  // Delegan a S3Keys (src/shared/helpers/s3-keys.helper.ts).
+  // Los callers existentes no necesitan cambiar; importar S3Keys directamente en código nuevo.
 
-  /** Logo del municipio — se sobreescribe en cada actualización */
-  static keyLogo(municipioId: string): string {
-    return `municipios/${municipioId}/logo/logo.png`;
-  }
-
-  /** Recibo de cobro en caja — el folio ya es único por municipio y mes */
+  /** @deprecated usar S3Keys.reciboCaja() */
   static keyReciboCaja(municipioId: string, folio: string): string {
-    return `municipios/${municipioId}/recibos/caja/${folio}.pdf`;
+    return S3Keys.reciboCaja(municipioId, folio);
   }
 
-  /** Recibo de orden de pago en línea (Stripe) */
+  /** @deprecated usar S3Keys.reciboOrden() */
   static keyReciboOrden(municipioId: string, folio: string): string {
-    return `municipios/${municipioId}/ordenes-pago/recibos/${folio}.pdf`;
+    return S3Keys.reciboOrden(municipioId, folio);
   }
 
-  /**
-   * Reporte DIF
-   * @param subtipo  'apoyos' | 'inventario' | 'beneficiarios' | 'fondos'
-   * @param periodo  'YYYYMM'
-   */
+  /** @deprecated usar S3Keys.reporteDif() */
   static keyReporteDif(
     municipioId: string,
     subtipo: string,
     periodo: string,
   ): string {
-    const ts = Date.now();
-    return `municipios/${municipioId}/reportes/dif/${subtipo}/RPT-${subtipo}-${periodo}-${ts}.pdf`;
+    return S3Keys.reporteDif(municipioId, subtipo, periodo);
   }
 
   /**
-   * Reporte Tesorería
-   * @param subtipo  'diario' | 'mensual' | 'servicios'
-   * @param periodo  'YYYYMMDD' para diario, 'YYYYMM' para mensual y servicios
+   * @deprecated usar S3Keys.corteDiario() / S3Keys.corteMensual() / S3Keys.reporteServicioTesoreria()
+   * Mantiene retrocompatibilidad mapeando subtipo al nuevo helper correcto.
    */
   static keyReporteTesoreria(
     municipioId: string,
     subtipo: string,
     periodo: string,
   ): string {
-    return `municipios/${municipioId}/reportes/tesoreria/${subtipo}/RPT-${subtipo}-${periodo}.pdf`;
+    if (subtipo === 'diario') return S3Keys.corteDiario(municipioId, periodo);
+    if (subtipo === 'mensual') return S3Keys.corteMensual(municipioId, periodo);
+    return S3Keys.reporteServicioTesoreria(municipioId, periodo);
   }
 
   /**
@@ -101,6 +95,33 @@ export class S3Service {
     } catch (error) {
       throw new BadRequestException(
         `Error subiendo PDF a S3: ${error.message}`,
+      );
+    }
+  }
+
+  /**
+   * Subir cualquier archivo a S3 con ContentType dinámico
+   */
+  async uploadFile(
+    key: string,
+    buffer: Buffer,
+    contentType: string,
+    metadata?: Record<string, string>,
+  ): Promise<{ key: string; bucket: string }> {
+    try {
+      const command = new PutObjectCommand({
+        Bucket: this.bucketName,
+        Key: key,
+        Body: buffer,
+        ContentType: contentType,
+        Metadata: metadata,
+        ServerSideEncryption: 'AES256',
+      });
+      await this.s3Client.send(command);
+      return { key, bucket: this.bucketName };
+    } catch (error) {
+      throw new BadRequestException(
+        `Error subiendo archivo a S3: ${error.message}`,
       );
     }
   }

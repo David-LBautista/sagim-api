@@ -75,6 +75,14 @@ class ModulosConfigDto {
   @ApiProperty({ example: true, required: false })
   @IsOptional()
   AUDITORIA?: boolean;
+
+  @ApiProperty({ example: true, required: false })
+  @IsOptional()
+  PORTAL?: boolean;
+
+  @ApiProperty({ example: true, required: false })
+  @IsOptional()
+  TRANSPARENCIA?: boolean;
 }
 
 class ConfigDto {

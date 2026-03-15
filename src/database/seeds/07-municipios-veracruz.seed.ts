@@ -344,6 +344,10 @@ export async function seedMunicipiosVeracruz(appContext?: any) {
         USUARIOS: false,
         REPORTES: false,
         CITAS: false,
+        REGISTRO_CIVIL: false,
+        AUDITORIA: false,
+        PORTAL: false,
+        TRANSPARENCIA: false,
       },
       features: {
         mfa: false,

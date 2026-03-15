@@ -64,6 +64,9 @@ export interface MunicipalityConfig {
     REPORTES?: boolean;
     CITAS?: boolean;
     REGISTRO_CIVIL?: boolean;
+    AUDITORIA?: boolean;
+    PORTAL?: boolean;
+    TRANSPARENCIA?: boolean;
   };
   stripe?: {
     accountId: string;

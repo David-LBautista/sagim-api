@@ -21,7 +21,10 @@ import {
   CambiarEstadoCitaDto,
   ReagendarCitaDto,
 } from '../dto/citas.dto';
-import { MunicipalityId } from '../../../common/decorators/user.decorator';
+import {
+  MunicipalityId,
+  UserId,
+} from '../../../common/decorators/user.decorator';
 import { RolesGuard } from '../../../common/guards/roles.guard';
 import { MunicipalityGuard } from '../../../common/guards/municipality.guard';
 
@@ -144,8 +147,7 @@ export class CitasController {
     @Param('id') id: string,
     @MunicipalityId() municipioId: string,
     @Body() dto: CambiarEstadoCitaDto,
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    @Query('userId') userId = 'sistema',
+    @UserId() userId: string,
   ) {
     return this.citasService.cambiarEstado(id, dto, municipioId, userId);
   }

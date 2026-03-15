@@ -22,6 +22,7 @@ export enum AuditModule {
   REPORTES = 'REPORTES',
   CIUDADANOS = 'CIUDADANOS',
   PAGOS = 'PAGOS',
+  TRANSPARENCIA = 'TRANSPARENCIA',
 }
 
 export type AuditLogDocument = AuditLog & Document;

@@ -14,11 +14,22 @@ export const CurrentUser = createParamDecorator(
 /**
  * Get the municipality ID from the current user
  * Usage: @MunicipalityId() municipioId: string
+ *
+ * Resolution order:
+ *  1. request.params.municipioId
+ *  2. request.body.municipioId
+ *  3. request.query.municipioId
+ *  4. request.user.municipioId  (ADMIN_MUNICIPIO / OPERATIVO — set by JWT)
  */
 export const MunicipalityId = createParamDecorator(
   (data: unknown, ctx: ExecutionContext) => {
     const request = ctx.switchToHttp().getRequest();
-    return request.user?.municipioId;
+    return (
+      request.params?.municipioId ||
+      request.body?.municipioId ||
+      request.query?.municipioId ||
+      request.user?.municipioId
+    );
   },
 );
 
