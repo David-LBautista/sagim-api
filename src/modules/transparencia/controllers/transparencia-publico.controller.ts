@@ -1,13 +1,14 @@
-import { Controller, Get, Param, NotFoundException } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiParam } from '@nestjs/swagger';
+import { Controller, Get, Param } from '@nestjs/common';
+import { ApiTags, ApiOperation, ApiParam, ApiHeader } from '@nestjs/swagger';
 
 import { TransparenciaService } from '../transparencia.service';
 import { PortalService } from '../../portal/portal.service';
 import { Public } from '../../../common/decorators/public.decorator';
+import { MunicipioSlug } from '../../../common/decorators/municipio-slug.decorator';
 
 @ApiTags('Transparencia — Público')
 @Public()
-@Controller('public/:municipioSlug/transparencia')
+@Controller('public/transparencia')
 export class TransparenciaPublicoController {
   constructor(
     private readonly transparenciaService: TransparenciaService,
@@ -26,7 +27,12 @@ export class TransparenciaPublicoController {
       'Portal de transparencia del municipio (solo secciones con documentos)',
   })
   @ApiParam({ name: 'municipioSlug', example: 'veracruz' })
-  async getPortalTransparencia(@Param('municipioSlug') slug: string) {
+  @ApiHeader({
+    name: 'x-municipio-slug',
+    required: false,
+    description: 'Fallback para dev local',
+  })
+  async getPortalTransparencia(@MunicipioSlug() slug: string) {
     const municipio = await this.portalService.resolverMunicipio(slug);
     const secciones = await this.transparenciaService.getPortalTransparencia(
       String(municipio._id),
@@ -50,7 +56,7 @@ export class TransparenciaPublicoController {
   @ApiParam({ name: 'municipioSlug', example: 'veracruz' })
   @ApiParam({ name: 'clave', example: 'marco_normativo' })
   async getSeccion(
-    @Param('municipioSlug') slug: string,
+    @MunicipioSlug() slug: string,
     @Param('clave') clave: string,
   ) {
     const municipio = await this.portalService.resolverMunicipio(slug);
