@@ -24,17 +24,21 @@ async function bootstrap() {
   app.setGlobalPrefix(apiPrefix);
 
   // Enable CORS
-  const allowedOrigins = [
-    'http://localhost:4200',
-    'http://localhost:4201',
-    'https://sagim-api-development.up.railway.app',
-    process.env.FRONTEND_URL,
-  ].filter(Boolean);
-
   app.enableCors({
-    origin: allowedOrigins,
-    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+    origin: (origin, callback) => {
+      // Permitir llamadas sin origin (Postman, server-to-server, Railway health checks)
+      if (!origin) return callback(null, true);
+      // Permitir localhost en dev
+      if (origin.startsWith('http://localhost')) return callback(null, true);
+      // Permitir cualquier subdominio de sagim.com.mx y el dominio raíz
+      if (origin.endsWith('.sagim.com.mx') || origin === 'https://sagim.com.mx') {
+        return callback(null, true);
+      }
+      callback(new Error('Not allowed by CORS'));
+    },
     credentials: true,
+    methods: 'GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS',
+    allowedHeaders: 'Content-Type, Authorization',
   });
 
   // Global validation pipe
