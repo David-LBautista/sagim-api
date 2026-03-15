@@ -24,8 +24,16 @@ async function bootstrap() {
   app.setGlobalPrefix(apiPrefix);
 
   // Enable CORS
+  const allowedOrigins = [
+    'http://localhost:4200',
+    'http://localhost:4201',
+    'https://sagim-api-development.up.railway.app',
+    process.env.FRONTEND_URL,
+  ].filter(Boolean);
+
   app.enableCors({
-    origin: ['http://localhost:4200', 'http://localhost:4201'],
+    origin: allowedOrigins,
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     credentials: true,
   });
 
