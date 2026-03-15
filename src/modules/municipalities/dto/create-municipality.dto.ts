@@ -7,6 +7,8 @@ import {
   IsObject,
   IsEmail,
   MinLength,
+  Min,
+  Max,
 } from 'class-validator';
 import { Transform } from 'class-transformer';
 import { MunicipalityConfig } from '@/shared/interfaces';
@@ -38,6 +40,20 @@ export class CreateMunicipalityDto {
   @IsNumber()
   @IsOptional()
   poblacion?: number;
+
+  @ApiProperty({ example: 18.8765, description: 'Latitud del municipio', required: false })
+  @IsNumber()
+  @Min(-90)
+  @Max(90)
+  @IsOptional()
+  latitud?: number;
+
+  @ApiProperty({ example: -97.1234, description: 'Longitud del municipio', required: false })
+  @IsNumber()
+  @Min(-180)
+  @Max(180)
+  @IsOptional()
+  longitud?: number;
 
   @ApiProperty({
     example: {

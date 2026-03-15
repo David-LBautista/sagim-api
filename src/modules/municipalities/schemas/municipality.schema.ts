@@ -41,6 +41,12 @@ export class Municipality {
   @Prop()
   direccion?: string;
 
+  @Prop({ type: Number })
+  latitud?: number;
+
+  @Prop({ type: Number })
+  longitud?: number;
+
   @Prop({ default: false })
   onboardingCompletado: boolean;
 

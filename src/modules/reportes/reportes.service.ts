@@ -82,7 +82,13 @@ export class ReportesService {
           {
             $expr: {
               $regexMatch: {
-                input: { $replaceAll: { input: { $toLower: '$nombre' }, find: ' ', replacement: '' } },
+                input: {
+                  $replaceAll: {
+                    input: { $toLower: '$nombre' },
+                    find: ' ',
+                    replacement: '',
+                  },
+                },
                 regex: `^${sinEspacios}$`,
               },
             },
@@ -762,6 +768,43 @@ export class ReportesService {
       .lean();
 
     return { data, total: data.length };
+  }
+
+  // ═══════════════════════════════════════════════════════════
+  // MAPA PÚBLICO
+  // ═══════════════════════════════════════════════════════════
+
+  /**
+   * Devuelve reportes resueltos y visibles que tienen coordenadas,
+   * para renderizar pines en el mapa de transparencia.
+   */
+  async getReportesParaMapa(municipioId: string) {
+    const reportes = await this.reporteModel
+      .find({
+        municipioId: new Types.ObjectId(municipioId),
+        estado: 'resuelto',
+        visible: true,
+        'ubicacion.latitud': { $exists: true, $ne: null },
+        'ubicacion.longitud': { $exists: true, $ne: null },
+      })
+      .select(
+        'folio categoria categoriaNombre descripcion ubicacion fechaResolucion createdAt',
+      )
+      .sort({ fechaResolucion: -1 })
+      .limit(200)
+      .lean();
+
+    return reportes.map((r) => ({
+      folio: r.folio,
+      categoria: r.categoria,
+      categoriaNombre: r.categoriaNombre,
+      descripcion: r.descripcion,
+      lat: (r.ubicacion as any).latitud,
+      lng: (r.ubicacion as any).longitud,
+      direccion: (r.ubicacion as any).descripcion ?? '',
+      colonia: (r.ubicacion as any).colonia ?? '',
+      fechaResolucion: r.fechaResolucion,
+    }));
   }
 
   // ═══════════════════════════════════════════════════════════

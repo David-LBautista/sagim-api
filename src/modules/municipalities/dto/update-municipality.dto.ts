@@ -73,6 +73,20 @@ export class UpdateMunicipalityDto {
   @IsOptional()
   direccion?: string;
 
+  @ApiProperty({ example: 18.8765, required: false, description: 'Latitud del municipio' })
+  @IsNumber()
+  @Min(-90)
+  @Max(90)
+  @IsOptional()
+  latitud?: number;
+
+  @ApiProperty({ example: -97.1234, required: false, description: 'Longitud del municipio' })
+  @IsNumber()
+  @Min(-180)
+  @Max(180)
+  @IsOptional()
+  longitud?: number;
+
   // ==================== DATOS DEL ADMINISTRADOR ====================
 
   @ApiProperty({

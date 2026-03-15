@@ -56,6 +56,8 @@ export class PortalService {
     nombre: string;
     logoUrl?: string;
     claveInegi?: string;
+    latitud?: number;
+    longitud?: number;
   }> {
     const normalizado = slug.replace(/-/g, ' ');
     const sinEspacios = slug.replace(/-/g, '').replace(/\s/g, '').toLowerCase();
@@ -92,6 +94,8 @@ export class PortalService {
       nombre: string;
       logoUrl?: string;
       claveInegi?: string;
+      latitud?: number;
+      longitud?: number;
     };
   }
 
@@ -122,6 +126,8 @@ export class PortalService {
     municipioId: string,
     municipioNombre: string,
     logoUrl?: string,
+    latitud?: number,
+    longitud?: number,
   ): Promise<Record<string, unknown>> {
     const ahora = new Date();
     const [config, avisos] = await Promise.all([
@@ -142,6 +148,8 @@ export class PortalService {
     return {
       nombre: municipioNombre,
       logoUrl: logoUrl ?? null,
+      latitud: latitud ?? null,
+      longitud: longitud ?? null,
       general: config.general,
       apariencia: config.apariencia,
       redesSociales: config.redesSociales,

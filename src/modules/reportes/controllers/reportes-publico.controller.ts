@@ -143,6 +143,22 @@ export class ReportesPublicoController {
     );
   }
 
+  /** GET /public/reportes/mapa — pines de reportes resueltos con coordenadas */
+  @Get('mapa')
+  @ApiOperation({
+    summary:
+      'Reportes resueltos con coordenadas para renderizar en mapa público',
+  })
+  @ApiHeader({
+    name: 'x-municipio-slug',
+    required: false,
+    description: 'Fallback para dev local',
+  })
+  async getReportesParaMapa(@MunicipioSlug() slug: string) {
+    const municipio = await this.reportesService.resolverMunicipio(slug);
+    return this.reportesService.getReportesParaMapa(String(municipio._id));
+  }
+
   /** GET /public/reportes/metricas */
   @Get('metricas')
   @ApiOperation({ summary: 'Métricas públicas del portal de transparencia' })

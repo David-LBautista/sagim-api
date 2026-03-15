@@ -35,6 +35,8 @@ export class PortalPublicoController {
       String(municipio._id),
       municipio.nombre,
       municipio.logoUrl,
+      municipio.latitud,
+      municipio.longitud,
     );
   }
 }

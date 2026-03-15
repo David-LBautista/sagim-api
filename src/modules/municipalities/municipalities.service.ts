@@ -181,7 +181,7 @@ export class MunicipalitiesService {
         activo: true,
       })
       .select(
-        'nombre logoUrl claveInegi contactoEmail contactoTelefono direccion config',
+        'nombre logoUrl claveInegi contactoEmail contactoTelefono direccion latitud longitud config',
       )
       .lean();
 
@@ -196,6 +196,8 @@ export class MunicipalitiesService {
       contactoEmail: (municipio as any).contactoEmail ?? null,
       contactoTelefono: (municipio as any).contactoTelefono ?? null,
       direccion: (municipio as any).direccion ?? null,
+      latitud: (municipio as any).latitud ?? null,
+      longitud: (municipio as any).longitud ?? null,
     };
   }
 
