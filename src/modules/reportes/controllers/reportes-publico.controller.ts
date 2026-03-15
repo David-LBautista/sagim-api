@@ -2,7 +2,6 @@ import {
   Controller,
   Get,
   Post,
-  Param,
   Body,
   Query,
   UploadedFiles,
@@ -16,35 +15,47 @@ import {
   ApiQuery,
   ApiConsumes,
   ApiBody,
+  ApiHeader,
 } from '@nestjs/swagger';
 
 import { ReportesService } from '../reportes.service';
 import { CrearReportePublicoDto, MetricasQueryDto } from '../dto/reportes.dto';
 import { Public } from '../../../common/decorators/public.decorator';
+import { MunicipioSlug } from '../../../common/decorators/municipio-slug.decorator';
 
 @ApiTags('Reportes — Portal Público')
 @Public()
-@Controller('public/:municipioSlug/reportes')
+@Controller('public/reportes')
 export class ReportesPublicoController {
   constructor(private readonly reportesService: ReportesService) {}
 
-  /** GET /public/:municipioSlug/reportes/info */
+  /** GET /public/reportes/info */
   @Get('info')
   @ApiOperation({ summary: 'Información del portal de reportes del municipio' })
-  async getInfoPortal(@Param('municipioSlug') slug: string) {
+  @ApiHeader({
+    name: 'x-municipio-slug',
+    required: false,
+    description: 'Fallback para dev local',
+  })
+  async getInfoPortal(@MunicipioSlug() slug: string) {
     const municipio = await this.reportesService.resolverMunicipio(slug);
     return this.reportesService.getInfoPortal(String(municipio._id));
   }
 
-  /** GET /public/:municipioSlug/reportes/categorias */
+  /** GET /public/reportes/categorias */
   @Get('categorias')
   @ApiOperation({ summary: 'Categorías de reportes activas del municipio' })
-  async getCategoriasActivas(@Param('municipioSlug') slug: string) {
+  @ApiHeader({
+    name: 'x-municipio-slug',
+    required: false,
+    description: 'Fallback para dev local',
+  })
+  async getCategoriasActivas(@MunicipioSlug() slug: string) {
     const municipio = await this.reportesService.resolverMunicipio(slug);
     return this.reportesService.getCategoriasActivas(String(municipio._id));
   }
 
-  /** POST /public/:municipioSlug/reportes */
+  /** POST /public/reportes */
   @Post()
   @ApiOperation({
     summary: 'Crear un reporte ciudadano desde el portal público',
@@ -81,9 +92,14 @@ export class ReportesPublicoController {
       },
     },
   })
+  @ApiHeader({
+    name: 'x-municipio-slug',
+    required: false,
+    description: 'Fallback para dev local',
+  })
   @UseInterceptors(FilesInterceptor('evidencia', 5))
   async crearReporte(
-    @Param('municipioSlug') slug: string,
+    @MunicipioSlug() slug: string,
     @Body() dto: CrearReportePublicoDto,
     @UploadedFiles() files?: Express.Multer.File[],
   ) {
@@ -97,7 +113,7 @@ export class ReportesPublicoController {
     );
   }
 
-  /** GET /public/:municipioSlug/reportes/consultar?folio=&token= */
+  /** GET /public/reportes/consultar?folio=&token= */
   @Get('consultar')
   @ApiOperation({ summary: 'Consultar estado de reporte por folio y token' })
   @ApiQuery({ name: 'folio', required: true, example: 'REP-2501-0001' })
@@ -106,8 +122,13 @@ export class ReportesPublicoController {
     required: true,
     description: 'UUID recibido por correo',
   })
+  @ApiHeader({
+    name: 'x-municipio-slug',
+    required: false,
+    description: 'Fallback para dev local',
+  })
   async consultarReporte(
-    @Param('municipioSlug') slug: string,
+    @MunicipioSlug() slug: string,
     @Query('folio') folio: string,
     @Query('token') token: string,
   ) {
@@ -122,13 +143,18 @@ export class ReportesPublicoController {
     );
   }
 
-  /** GET /public/:municipioSlug/reportes/metricas */
+  /** GET /public/reportes/metricas */
   @Get('metricas')
   @ApiOperation({ summary: 'Métricas públicas del portal de transparencia' })
   @ApiQuery({ name: 'mes', required: false, type: Number })
   @ApiQuery({ name: 'anio', required: false, type: Number })
+  @ApiHeader({
+    name: 'x-municipio-slug',
+    required: false,
+    description: 'Fallback para dev local',
+  })
   async getMetricas(
-    @Param('municipioSlug') slug: string,
+    @MunicipioSlug() slug: string,
     @Query() query: MetricasQueryDto,
   ) {
     const municipio = await this.reportesService.resolverMunicipio(slug);

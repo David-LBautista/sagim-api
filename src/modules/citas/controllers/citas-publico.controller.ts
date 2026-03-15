@@ -3,32 +3,37 @@ import {
   Get,
   Post,
   Patch,
-  Param,
   Body,
   Query,
   BadRequestException,
 } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiQuery } from '@nestjs/swagger';
+import { ApiTags, ApiOperation, ApiQuery, ApiHeader } from '@nestjs/swagger';
 
 import { CitasService } from '../citas.service';
 import { CrearCitaPublicaDto, CancelarCitaPublicaDto } from '../dto/citas.dto';
 import { Public } from '../../../common/decorators/public.decorator';
+import { MunicipioSlug } from '../../../common/decorators/municipio-slug.decorator';
 
 @ApiTags('Citas — Portal Público')
 @Public()
-@Controller('public/:municipioSlug/citas')
+@Controller('public/citas')
 export class CitasPublicoController {
   constructor(private readonly citasService: CitasService) {}
 
-  /** GET /public/:municipioSlug/citas/areas  */
+  /** GET /public/citas/areas  */
   @Get('areas')
-  @ApiOperation({ summary: 'Obtener áreas con citas activas del municipio' })
-  async getAreasActivas(@Param('municipioSlug') slug: string) {
+  @ApiOperation({ summary: 'Áreas con citas activas del municipio' })
+  @ApiHeader({
+    name: 'x-municipio-slug',
+    required: false,
+    description: 'Fallback para dev local',
+  })
+  async getAreasActivas(@MunicipioSlug() slug: string) {
     const municipio = await this.citasService.resolverMunicipio(slug);
     return this.citasService.getAreasActivas(String(municipio._id));
   }
 
-  /** GET /public/:municipioSlug/citas/disponibilidad?area=&fechaInicio=&fechaFin= */
+  /** GET /public/citas/disponibilidad?area=&fechaInicio=&fechaFin= */
   @Get('disponibilidad')
   @ApiOperation({
     summary:
@@ -37,8 +42,13 @@ export class CitasPublicoController {
   @ApiQuery({ name: 'area', required: true })
   @ApiQuery({ name: 'fechaInicio', required: true, description: 'YYYY-MM-DD' })
   @ApiQuery({ name: 'fechaFin', required: true, description: 'YYYY-MM-DD' })
+  @ApiHeader({
+    name: 'x-municipio-slug',
+    required: false,
+    description: 'Fallback para dev local',
+  })
   async getDisponibilidad(
-    @Param('municipioSlug') slug: string,
+    @MunicipioSlug() slug: string,
     @Query('area') area: string,
     @Query('fechaInicio') fechaInicio: string,
     @Query('fechaFin') fechaFin: string,
@@ -52,11 +62,16 @@ export class CitasPublicoController {
     );
   }
 
-  /** POST /public/:municipioSlug/citas */
+  /** POST /public/citas */
   @Post()
   @ApiOperation({ summary: 'Agendar cita desde el portal ciudadano' })
+  @ApiHeader({
+    name: 'x-municipio-slug',
+    required: false,
+    description: 'Fallback para dev local',
+  })
   async crearCita(
-    @Param('municipioSlug') slug: string,
+    @MunicipioSlug() slug: string,
     @Body() dto: CrearCitaPublicaDto,
   ) {
     const municipio = await this.citasService.resolverMunicipio(slug);
@@ -68,7 +83,7 @@ export class CitasPublicoController {
     );
   }
 
-  /** GET /public/:municipioSlug/citas/consultar?folio=&token= (o &curp=) */
+  /** GET /public/citas/consultar?folio=&token= (o &curp=) */
   @Get('consultar')
   @ApiOperation({
     summary: 'Consultar estado de cita por folio + token (email) o CURP',
@@ -84,8 +99,13 @@ export class CitasPublicoController {
     required: false,
     description: 'CURP del ciudadano (alternativa al token)',
   })
+  @ApiHeader({
+    name: 'x-municipio-slug',
+    required: false,
+    description: 'Fallback para dev local',
+  })
   async consultarCita(
-    @Param('municipioSlug') slug: string,
+    @MunicipioSlug() slug: string,
     @Query('folio') folio: string,
     @Query('token') token?: string,
     @Query('curp') curp?: string,
@@ -104,11 +124,16 @@ export class CitasPublicoController {
     );
   }
 
-  /** PATCH /public/:municipioSlug/citas/cancelar */
+  /** PATCH /public/citas/cancelar */
   @Patch('cancelar')
   @ApiOperation({ summary: 'Cancelar cita desde el portal ciudadano' })
+  @ApiHeader({
+    name: 'x-municipio-slug',
+    required: false,
+    description: 'Fallback para dev local',
+  })
   async cancelarCita(
-    @Param('municipioSlug') slug: string,
+    @MunicipioSlug() slug: string,
     @Body() dto: CancelarCitaPublicaDto,
   ) {
     const tokenOrCurp = dto.token || dto.curp;
